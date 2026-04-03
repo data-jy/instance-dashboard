@@ -1,0 +1,2353 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>인스턴스 리소스 분석 자동화</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root {
+    --navy: #1a2744;
+    --navy2: #243258;
+    --blue: #2d5be3;
+    --blue-light: #e8eeff;
+    --green: #1a7a4a;
+    --green-light: #e6f4ec;
+    --red: #c0392b;
+    --red-light: #fdecea;
+    --yellow: #e67e22;
+    --yellow-light: #fef3e2;
+    --teal: #0891b2;
+    --teal-light: #e0f7fa;
+    --orange: #ea7317;
+    --orange-light: #fff3e0;
+    --gray50: #f8f9fc;
+    --gray100: #f0f2f7;
+    --gray200: #dde1ed;
+    --gray400: #9ba3bb;
+    --gray600: #5a6480;
+    --gray900: #1a1f33;
+    --shadow-sm: 0 1px 3px rgba(26,39,68,.08), 0 1px 2px rgba(26,39,68,.04);
+    --shadow: 0 4px 16px rgba(26,39,68,.1), 0 2px 6px rgba(26,39,68,.06);
+    --shadow-lg: 0 12px 40px rgba(26,39,68,.14), 0 4px 16px rgba(26,39,68,.08);
+    --radius: 10px;
+    --radius-lg: 16px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans KR', sans-serif; background: var(--gray50); color: var(--gray900); min-height: 100vh; }
+
+  /* ── 헤더 */
+  .header {
+    background: var(--navy);
+    padding: 0 40px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: var(--shadow);
+  }
+  .header-icon { width: 32px; height: 32px; background: var(--blue); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .header h1 { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
+  .header-sub { font-size: 12px; color: rgba(255,255,255,.5); margin-left: auto; font-family: 'JetBrains Mono', monospace; }
+
+  /* ── 레이아웃 */
+  .container { max-width: 1100px; margin: 0 auto; padding: 36px 24px; }
+  .steps { display: flex; flex-direction: column; gap: 24px; }
+
+  /* ── 스텝 카드 */
+  .step-card {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    transition: box-shadow .2s;
+  }
+  .step-card:hover { box-shadow: var(--shadow-lg); }
+  .step-header {
+    padding: 20px 28px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 1px solid var(--gray100);
+    background: var(--gray50);
+  }
+  .step-num {
+    width: 28px; height: 28px;
+    background: var(--navy);
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .step-num.done { background: var(--green); }
+  .step-title { font-size: 15px; font-weight: 700; color: var(--navy); }
+  .step-desc { font-size: 12px; color: var(--gray400); margin-left: auto; }
+  .step-body { padding: 24px 28px; }
+
+  /* ── 파일 업로드 영역 */
+  .upload-zone {
+    border: 2px dashed var(--gray200);
+    border-radius: var(--radius);
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    background: var(--gray50);
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--blue); background: var(--blue-light); }
+  .upload-icon { font-size: 36px; margin-bottom: 12px; }
+  .upload-title { font-size: 15px; font-weight: 600; color: var(--navy); margin-bottom: 6px; }
+  .upload-hint { font-size: 12px; color: var(--gray400); line-height: 1.6; }
+  #fileInput { display: none; }
+
+  /* ── 업로드된 파일 목록 */
+  .file-list { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+  .file-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    background: var(--gray50);
+    border-radius: 8px;
+    border: 1px solid var(--gray200);
+    font-size: 13px;
+  }
+  .file-item .fi-icon { font-size: 16px; }
+  .file-item .fi-name { flex: 1; color: var(--gray900); font-weight: 500; }
+  .file-item .fi-type { font-size: 11px; color: var(--blue); font-family: 'JetBrains Mono', monospace; background: var(--blue-light); padding: 2px 7px; border-radius: 4px; }
+  .file-item .fi-del { cursor: pointer; color: var(--gray400); font-size: 16px; transition: color .15s; }
+  .file-item .fi-del:hover { color: var(--red); }
+
+  /* ── 설정 그리드 */
+  .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 640px) { .config-grid { grid-template-columns: 1fr; } }
+  .config-item label { display: block; font-size: 12px; font-weight: 600; color: var(--gray600); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
+  .config-item input, .config-item select {
+    width: 100%; padding: 10px 14px;
+    border: 1.5px solid var(--gray200);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: 'Noto Sans KR', sans-serif;
+    color: var(--gray900);
+    background: #fff;
+    transition: border-color .15s;
+    outline: none;
+  }
+  .config-item input:focus, .config-item select:focus { border-color: var(--blue); }
+  .config-hint { font-size: 11px; color: var(--gray400); margin-top: 4px; }
+
+  /* ── 예외처리 테이블 */
+  .rule-table { width: 100%; border-collapse: collapse; }
+  .rule-table th {
+    background: var(--navy);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 10px 14px;
+    text-align: left;
+    letter-spacing: .3px;
+  }
+  .rule-table td { padding: 8px 10px; border-bottom: 1px solid var(--gray100); vertical-align: middle; }
+  .rule-table tr:last-child td { border-bottom: none; }
+  .rule-table tr:hover td { background: var(--gray50); }
+  .rule-table input, .rule-table select {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1.5px solid var(--gray200);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: 'Noto Sans KR', sans-serif;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .rule-table input:focus, .rule-table select:focus { border-color: var(--blue); }
+  .rule-table .del-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--gray400); font-size: 16px; padding: 4px 8px;
+    border-radius: 6px; transition: all .15s;
+  }
+  .rule-table .del-btn:hover { color: var(--red); background: var(--red-light); }
+
+  .badge {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 4px; font-size: 11px; font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .badge-green  { background: var(--green-light);  color: var(--green); }
+  .badge-red    { background: var(--red-light);    color: var(--red); }
+  .badge-yellow { background: var(--yellow-light); color: var(--yellow); }
+  .badge-teal   { background: var(--teal-light);   color: var(--teal); }
+  .badge-orange { background: var(--orange-light); color: var(--orange); }
+  .badge-gray   { background: var(--gray100);      color: var(--gray600); }
+
+  /* ── 버튼 */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 22px;
+    border-radius: 8px;
+    font-size: 14px; font-weight: 600;
+    font-family: 'Noto Sans KR', sans-serif;
+    cursor: pointer; border: none;
+    transition: all .2s; outline: none;
+  }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-primary:hover { background: #2348c4; box-shadow: 0 4px 12px rgba(45,91,227,.3); }
+  .btn-primary:disabled { background: var(--gray200); color: var(--gray400); cursor: not-allowed; box-shadow: none; }
+  .btn-outline {
+    background: #fff; color: var(--navy);
+    border: 1.5px solid var(--gray200);
+  }
+  .btn-outline:hover { border-color: var(--navy); background: var(--gray50); }
+  .btn-success { background: var(--green); color: #fff; }
+  .btn-success:hover { background: #145e38; box-shadow: 0 4px 12px rgba(26,122,74,.3); }
+  .btn-sm { padding: 7px 14px; font-size: 13px; }
+
+  .btn-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  /* ── 진행 상태 */
+  .progress-wrap { margin-top: 20px; }
+  .progress-bar-bg { height: 6px; background: var(--gray100); border-radius: 3px; overflow: hidden; }
+  .progress-bar { height: 100%; background: var(--blue); border-radius: 3px; transition: width .4s; width: 0; }
+  .progress-logs {
+    margin-top: 12px;
+    background: var(--navy);
+    border-radius: 8px;
+    padding: 16px;
+    max-height: 180px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    color: #8da3c8;
+  }
+  .log-ok   { color: #4ade80; }
+  .log-warn { color: #facc15; }
+  .log-err  { color: #f87171; }
+  .log-info { color: #93c5fd; }
+
+  /* ── 결과 요약 */
+  .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; }
+  @media (max-width: 640px) { .result-grid { grid-template-columns: 1fr 1fr; } }
+  .result-card {
+    padding: 16px;
+    border-radius: var(--radius);
+    text-align: center;
+  }
+  .result-card .rc-num { font-size: 28px; font-weight: 700; line-height: 1; margin-bottom: 6px; }
+  .result-card .rc-label { font-size: 12px; font-weight: 500; }
+
+  /* ── 섹션 타이틀 */
+  .section-label {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .8px;
+    color: var(--gray400); margin-bottom: 12px;
+  }
+
+  /* ── 판정 기준 */
+  .criteria-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 640px) { .criteria-grid { grid-template-columns: 1fr; } }
+  .criteria-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--gray200);
+    background: #fff;
+  }
+  .criteria-color { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .criteria-label { font-size: 13px; font-weight: 600; color: var(--gray900); min-width: 90px; }
+  .criteria-desc { font-size: 12px; color: var(--gray600); }
+
+  .divider { height: 1px; background: var(--gray100); margin: 20px 0; }
+
+  /* ── 스피너 */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+
+  /* ── 알림 */
+  .alert {
+    padding: 12px 16px; border-radius: 8px;
+    font-size: 13px; display: flex; align-items: center; gap: 10px;
+  }
+  .alert-warn { background: var(--yellow-light); color: var(--yellow); border: 1px solid #fcd34d; }
+  .alert-info { background: var(--blue-light); color: var(--blue); border: 1px solid #93c5fd; }
+
+  /* ── 탭 */
+  .tab-bar { display: flex; gap: 4px; border-bottom: 2px solid var(--gray100); margin-bottom: 20px; }
+  .tab-btn {
+    padding: 10px 18px; font-size: 13px; font-weight: 600;
+    color: var(--gray400); cursor: pointer;
+    border: none; background: none;
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+    transition: all .15s; font-family: 'Noto Sans KR', sans-serif;
+  }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* 테이블 미리보기 */
+  .preview-table-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+  .preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .preview-table th {
+    background: var(--navy); color: #fff;
+    padding: 8px 12px; text-align: left;
+    position: sticky; top: 0; z-index: 1;
+    font-size: 11px; letter-spacing: .3px;
+  }
+  .preview-table td { padding: 7px 12px; border-bottom: 1px solid var(--gray100); }
+  .preview-table tr:hover td { background: var(--gray50); }
+  .cell-green  { background: #dcfce7; color: #166534; font-weight: 600; }
+  .cell-yellow { background: #fef9c3; color: #854d0e; font-weight: 600; }
+  .cell-red    { background: #fee2e2; color: #991b1b; font-weight: 600; }
+  .cell-teal   { background: #cffafe; color: #155e75; font-weight: 600; }
+  .cell-orange { background: #ffedd5; color: #9a3412; font-weight: 600; }
+  .cell-gray   { color: var(--gray600); }
+
+  .empty-state { text-align: center; padding: 40px; color: var(--gray400); font-size: 13px; }
+
+  /* ── 서비스 현황 입력 */
+  .svc-input {
+    width: 100%; padding: 7px 10px;
+    border: 1.5px solid var(--gray200);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--gray900);
+    background: #fff;
+    transition: border-color .15s;
+    outline: none;
+  }
+  .svc-input:focus { border-color: var(--blue); }
+  .svc-input.formatted { color: var(--navy); font-weight: 600; background: var(--gray50); }
+
+  /* ── 가이드 패널 */
+  .guide-panel {
+    background: var(--navy);
+    color: rgba(255,255,255,.85);
+    padding: 0;
+    overflow: hidden;
+  }
+  .guide-toggle {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 40px; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: rgba(255,255,255,.7);
+    user-select: none; transition: background .15s;
+  }
+  .guide-toggle:hover { background: rgba(255,255,255,.06); }
+  .guide-toggle .gt-icon { font-size: 16px; }
+  .guide-toggle .gt-arrow { margin-left: auto; transition: transform .25s; font-size: 12px; }
+  .guide-toggle.open .gt-arrow { transform: rotate(180deg); }
+  .guide-body {
+    display: none;
+    padding: 0 40px 28px;
+    border-top: 1px solid rgba(255,255,255,.08);
+  }
+  .guide-body.open { display: block; }
+
+  .guide-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 20px; }
+  @media (max-width:700px) { .guide-grid { grid-template-columns: 1fr; } }
+
+  .guide-block h3 {
+    font-size: 12px; font-weight: 700; letter-spacing: .6px;
+    text-transform: uppercase; color: rgba(255,255,255,.45);
+    margin-bottom: 10px;
+  }
+
+  /* 파일명 분해 다이어그램 */
+  .filename-demo {
+    background: rgba(255,255,255,.06);
+    border-radius: 8px;
+    padding: 16px 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+  .fname-row { display: flex; align-items: center; gap: 0; flex-wrap: wrap; margin-bottom: 8px; }
+  .fname-seg {
+    padding: 5px 10px; border-radius: 5px;
+    font-size: 12px; font-weight: 600;
+    margin: 2px;
+  }
+  .fs-period  { background: #3b4f8a; color: #a5b8f8; }
+  .fs-net     { background: #1e5f4a; color: #6ee7b7; }
+  .fs-ops     { background: #4a3a20; color: #fcd34d; }
+  .fs-metric  { background: #4a1e40; color: #f0abfc; }
+  .fs-stat    { background: #1e3a5f; color: #7dd3fc; }
+  .fs-ext     { background: #2d2d2d; color: #9ca3af; }
+  .fname-sep  { color: rgba(255,255,255,.3); font-size: 13px; margin: 0 1px; }
+
+  .fname-legend { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+  .fname-legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: rgba(255,255,255,.6); }
+  .fname-legend-item .fl-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+  /* 컬럼 설명 */
+  .col-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .col-table th { text-align: left; padding: 6px 10px; color: rgba(255,255,255,.4); font-weight: 600; font-size: 11px; letter-spacing: .4px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .col-table td { padding: 7px 10px; color: rgba(255,255,255,.75); border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: top; }
+  .col-table tr:last-child td { border-bottom: none; }
+  .col-table code { font-family: 'JetBrains Mono', monospace; background: rgba(255,255,255,.1); padding: 1px 6px; border-radius: 4px; font-size: 11px; color: #93c5fd; }
+  .col-table .req { color: #f87171; font-size: 10px; font-weight: 700; }
+  .col-table .opt { color: #6ee7b7; font-size: 10px; font-weight: 700; }
+
+  /* 파일 조합표 */
+  .combo-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .combo-table th { padding: 7px 10px; background: rgba(255,255,255,.08); color: rgba(255,255,255,.5); font-size: 11px; letter-spacing:.3px; text-align:left; }
+  .combo-table td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,.05); color: rgba(255,255,255,.75); }
+  .combo-table tr:last-child td { border-bottom: none; }
+  .combo-table .ck { color: #4ade80; font-size: 14px; }
+  .combo-table code { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #93c5fd; }
+
+  /* 처리 흐름 */
+  .flow-steps { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .flow-step {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 9px 12px; border-radius: 7px;
+    background: rgba(255,255,255,.05);
+    font-size: 12px; color: rgba(255,255,255,.75);
+  }
+  .flow-step .fs-num {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--blue); color: #fff;
+    font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .flow-step .fs-text strong { display: block; color: #fff; margin-bottom: 2px; font-size: 12px; }
+
+  /* 판정 범례 */
+  .verdict-list { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+  .verdict-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 7px; font-size: 12px; }
+  .verdict-item .vi-badge { padding: 3px 9px; border-radius: 5px; font-size: 11px; font-weight: 700; min-width: 100px; text-align: center; }
+  .verdict-item .vi-desc { color: rgba(255,255,255,.65); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-icon">📊</div>
+  <h1>인스턴스 리소스 분석 자동화</h1>
+  <span class="header-sub">Resource Analysis Automation v1.0</span>
+</div>
+
+<!-- ── 사용 가이드 패널 (헤더 바로 아래) -->
+<div class="guide-panel">
+  <div class="guide-toggle" id="guideToggle" onclick="toggleGuide()">
+    <span class="gt-icon">📖</span>
+    <span>사용 가이드 — 파일 양식 · 컬럼 구조 · 처리 흐름 보기</span>
+    <span class="gt-arrow">▼</span>
+  </div>
+  <div class="guide-body" id="guideBody">
+    <div class="guide-grid">
+
+      <!-- 블록1: 파일명 규칙 -->
+      <div class="guide-block">
+        <h3>📁 파일명 규칙</h3>
+        <div class="filename-demo">
+          <div class="fname-row">
+            <span class="fname-seg fs-period">260311-0318</span>
+            <span class="fname-sep">_</span>
+            <span class="fname-seg fs-net">인망</span>
+            <span class="fname-sep">_</span>
+            <span class="fname-seg fs-ops">운영</span>
+            <span class="fname-sep">_</span>
+            <span class="fname-seg fs-metric">cpu_mem</span>
+            <span class="fname-sep">_</span>
+            <span class="fname-seg fs-stat">최대값</span>
+            <span class="fname-sep">.</span>
+            <span class="fname-seg fs-ext">xlsx</span>
+          </div>
+          <div class="fname-legend">
+            <div class="fname-legend-item"><div class="fl-dot" style="background:#3b4f8a"></div><strong style="color:#a5b8f8">260311-0318</strong> — 조회 기간 (YYMMDD-YYMMDD). 자동 인식됩니다.</div>
+            <div class="fname-legend-item"><div class="fl-dot" style="background:#1e5f4a"></div><strong style="color:#6ee7b7">인망 / 행망</strong> — 네트워크 망 구분</div>
+            <div class="fname-legend-item"><div class="fl-dot" style="background:#4a3a20"></div><strong style="color:#fcd34d">운영</strong> — 고정값 (변경 불필요)</div>
+            <div class="fname-legend-item"><div class="fl-dot" style="background:#4a1e40"></div><strong style="color:#f0abfc">cpu_mem / network</strong> — 지표 종류</div>
+            <div class="fname-legend-item"><div class="fl-dot" style="background:#1e3a5f"></div><strong style="color:#7dd3fc">최대값 / 평균값</strong> — 집계 방식</div>
+          </div>
+        </div>
+
+        <h3 style="margin-top:16px">📦 필요한 파일 조합 (총 8개 × 기간 수)</h3>
+        <table class="combo-table">
+          <thead><tr><th>파일명 패턴</th><th>필수</th></tr></thead>
+          <tbody>
+            <tr><td><code>YYMMDD-YYMMDD_인망_운영_cpu_mem_최대값.xlsx</code></td><td class="ck">✓</td></tr>
+            <tr><td><code>YYMMDD-YYMMDD_인망_운영_cpu_mem_평균값.xlsx</code></td><td class="ck">✓</td></tr>
+            <tr><td><code>YYMMDD-YYMMDD_인망_운영_network_최대값.xlsx</code></td><td class="ck">✓</td></tr>
+            <tr><td><code>YYMMDD-YYMMDD_인망_운영_network_평균값.xlsx</code></td><td class="ck">✓</td></tr>
+            <tr><td><code>YYMMDD-YYMMDD_행망_운영_cpu_mem_최대값.xlsx</code></td><td class="ck">✓</td></tr>
+            <tr><td><code>YYMMDD-YYMMDD_행망_운영_cpu_mem_평균값.xlsx</code></td><td class="ck">✓</td></tr>
+            <tr><td><code>YYMMDD-YYMMDD_행망_운영_network_최대값.xlsx</code></td><td class="ck">✓</td></tr>
+            <tr><td><code>YYMMDD-YYMMDD_행망_운영_network_평균값.xlsx</code></td><td class="ck">✓</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:8px; font-size:11px; color:rgba(255,255,255,.4)">
+          ※ 여러 기간을 한꺼번에 업로드하면 자동으로 합산됩니다. (예: 1월+2월+3월 파일 24개 동시 업로드 가능)
+        </div>
+      </div>
+
+      <!-- 블록2: 컬럼 구조 -->
+      <div class="guide-block">
+        <h3>📋 엑셀 파일 내부 컬럼 구조</h3>
+
+        <div style="font-size:11px; color:rgba(255,255,255,.4); margin-bottom:8px">CPU/MEM 파일 (최대값·평균값 공통)</div>
+        <table class="col-table">
+          <thead><tr><th>컬럼명</th><th>내용</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><code>oname</code></td><td>서버명 (인스턴스 호스트명)</td><td><span class="req">필수</span></td></tr>
+            <tr><td><code>cpu</code></td><td>CPU 사용률 (%)</td><td><span class="req">필수</span></td></tr>
+            <tr><td><code>memory_pused</code></td><td>메모리 사용률 (%)</td><td><span class="req">필수</span></td></tr>
+            <tr><td><code>time</code></td><td>집계 기준 일자 (날짜 형식)</td><td><span class="req">필수</span></td></tr>
+          </tbody>
+        </table>
+
+        <div style="font-size:11px; color:rgba(255,255,255,.4); margin:14px 0 8px">Network 파일 (최대값·평균값 공통)</div>
+        <table class="col-table">
+          <thead><tr><th>컬럼명</th><th>내용</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><code>oname</code></td><td>서버명 (인스턴스 호스트명)</td><td><span class="req">필수</span></td></tr>
+            <tr><td><code>trafficIn</code></td><td>인바운드 트래픽 (bps)</td><td><span class="req">필수</span></td></tr>
+            <tr><td><code>trafficOut</code></td><td>아웃바운드 트래픽 (bps)</td><td><span class="req">필수</span></td></tr>
+            <tr><td><code>time</code></td><td>집계 기준 일자 (날짜 형식)</td><td><span class="req">필수</span></td></tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:10px; background:rgba(255,255,255,.05); border-radius:7px; padding:10px 12px; font-size:11px; color:rgba(255,255,255,.5); line-height:1.7">
+          ※ 와탭 MXQL 데이터 조회에서 CSV 내보내기 후 xlsx로 변환하면 위 컬럼이 그대로 유지됩니다.<br>
+          ※ 컬럼 순서는 달라도 됩니다. 컬럼명만 일치하면 자동 인식됩니다.<br>
+          ※ 피벗 테이블이 포함된 경우 첫 번째 시트의 원본 데이터만 읽습니다.
+        </div>
+
+        <h3 style="margin-top:18px">⚙️ 처리 흐름</h3>
+        <div class="flow-steps">
+          <div class="flow-step"><div class="fs-num">1</div><div class="fs-text"><strong>파일 자동 분류</strong>파일명에서 망(인망/행망), 지표(CPU·MEM/Network), 집계(최대/평균) 자동 인식</div></div>
+          <div class="flow-step"><div class="fs-num">2</div><div class="fs-text"><strong>서버별 집계</strong>여러 기간 파일 중복 제거 후 합산 → 서버별 전체 기간 최대·평균 산출</div></div>
+          <div class="flow-step"><div class="fs-num">3</div><div class="fs-text"><strong>예외처리 규칙 적용</strong>키워드 매칭으로 예외처리·유지확정·일시피크 분류 (Step 3에서 설정)</div></div>
+          <div class="flow-step"><div class="fs-num">4</div><div class="fs-text"><strong>판정 산출</strong>VM: 40%이하→감설(강력권고) / 40~70%→유지(보통) / 70%이상→증설(유지주의) 자동 판정</div></div>
+          <div class="flow-step"><div class="fs-num">5</div><div class="fs-text"><strong>보고서 생성</strong>8개 시트 자동 구성 — 요약·인망/행망 상세·Network·스펙다운 후보·유지확정·예외처리</div></div>
+        </div>
+
+        <h3 style="margin-top:18px">🏷️ 판정 기준</h3>
+        <div class="verdict-list">
+          <div class="verdict-item" style="background:rgba(34,197,94,.12)"><div class="vi-badge" style="background:#dcfce7;color:#166534">🟢 강력권고</div><div class="vi-desc">CPU AND MEM 최대 &lt; 40% (감설 대상)</div></div>
+          <div class="verdict-item" style="background:rgba(234,115,23,.1)"><div class="vi-badge" style="background:#ffedd5;color:#9a3412">🟠 일시피크→검토</div><div class="vi-desc">규칙에서 review로 지정된 서버</div></div>
+          <div class="verdict-item" style="background:rgba(239,68,68,.1)"><div class="vi-badge" style="background:#fee2e2;color:#991b1b">🔴 유지(주의)</div><div class="vi-desc">CPU 또는 MEM 최대 ≥ 70% (증설 검토)</div></div>
+          <div class="verdict-item" style="background:rgba(8,145,178,.1)"><div class="vi-badge" style="background:#cffafe;color:#155e75">🔵 유지(확정)</div><div class="vi-desc">규칙에서 keep으로 지정된 서버</div></div>
+          <div class="verdict-item" style="background:rgba(255,255,255,.04)"><div class="vi-badge" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.5)">⚪ 예외처리</div><div class="vi-desc">규칙에서 except로 지정된 서버</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="container">
+<div class="steps">
+
+<!-- ── STEP 1: 파일 업로드 -->
+<div class="step-card" id="card1">
+  <div class="step-header">
+    <div class="step-num" id="num1">1</div>
+    <div>
+      <div class="step-title">데이터 파일 업로드</div>
+    </div>
+    <div class="step-desc" id="fileCount">파일 0개 업로드됨</div>
+  </div>
+  <div class="step-body">
+    <div class="alert alert-info" style="margin-bottom:16px">
+      💡 <strong>파일명 형식:</strong>
+      <code style="font-family:monospace; background:rgba(45,91,227,.12); padding:2px 7px; border-radius:4px; color:var(--blue)">YYMMDD-YYMMDD_망_운영_항목_구분.xlsx</code>
+      &nbsp;— 기간은 파일명에서 자동 인식됩니다. 위 <strong>사용 가이드</strong>에서 상세 양식 확인하세요.
+    </div>
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+      <div class="upload-icon">📁</div>
+      <div class="upload-title">클릭하거나 파일을 드래그하여 업로드</div>
+      <div class="upload-hint">
+        인망/행망 × CPU-MEM/Network × 최대값/평균값 — 기간당 8개 파일<br>
+        여러 기간 파일을 한꺼번에 올려도 자동으로 합산합니다<br>
+        <span style="color:var(--orange);font-weight:500">📦 Pod 데이터 파일도 함께 올리면 Pod 분석 시트가 자동 생성됩니다</span><br>
+        <span style="font-size:11px;color:var(--gray400)">Pod 파일 구분: <code style="background:rgba(0,0,0,.05);padding:1px 4px;border-radius:3px">podName</code> 컬럼 포함 여부로 자동 감지 — 파일명 형식 무관</span>
+      </div>
+    </div>
+    <input type="file" id="fileInput" multiple accept=".xlsx">
+    <div class="file-list" id="fileList"></div>
+  </div>
+</div>
+
+<!-- ── STEP 2: 설정 -->
+<div class="step-card" id="card2">
+  <div class="step-header">
+    <div class="step-num" id="num2">2</div>
+    <div>
+      <div class="step-title">분석 설정</div>
+    </div>
+    <div class="step-desc">사양 파일 · NIC · 판정 임계값</div>
+  </div>
+  <div class="step-body">
+
+    <!-- 사양 파일 업로드 -->
+    <div class="section-label">📋 인스턴스 사양 파일
+      <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--gray400)">(선택 — 업로드 시 시스템명·현재 vCPU/RAM·권고 사양 자동 계산)</span>
+    </div>
+    <div id="specUploadArea" onclick="document.getElementById('specFileInput').click()"
+      ondragover="event.preventDefault();this.style.borderColor='#4ADE80';this.style.background='#F0FDF4'"
+      ondragleave="resetSpecArea()"
+      ondrop="event.preventDefault();resetSpecArea();handleSpecFile(event.dataTransfer.files[0])"
+      style="display:flex;align-items:center;gap:14px;padding:14px 18px;background:#F8FFFE;
+             border:2px dashed #86EFAC;border-radius:10px;margin-bottom:20px;cursor:pointer;
+             transition:all .15s">
+      <span style="font-size:26px;flex-shrink:0" id="specIcon">📊</span>
+      <div style="flex:1;min-width:0">
+        <div id="specFileLabel" style="font-weight:600;font-size:13px;color:#166534;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          클릭하거나 드래그하여 인스턴스 사양 파일 업로드
+        </div>
+        <div style="font-size:11px;color:#4ADE80;margin-top:3px">
+          필수 컬럼:
+          <code style="background:rgba(0,128,0,.08);padding:1px 5px;border-radius:3px">인스턴스명</code>
+          <code style="background:rgba(0,128,0,.08);padding:1px 5px;border-radius:3px">CPU</code>
+          <code style="background:rgba(0,128,0,.08);padding:1px 5px;border-radius:3px">RAM</code>
+          &nbsp;선택:
+          <code style="background:rgba(0,128,0,.08);padding:1px 5px;border-radius:3px">시스템명</code>
+          <code style="background:rgba(0,128,0,.08);padding:1px 5px;border-radius:3px">망</code>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <div id="specStatusBadge" style="display:none;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600"></div>
+        <button onclick="event.stopPropagation();clearSpec()"
+          id="specClearBtn" style="display:none;background:none;border:1px solid #FCA5A5;
+          color:#EF4444;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">✕ 제거</button>
+      </div>
+    </div>
+    <input type="file" id="specFileInput" accept=".xlsx" style="display:none"
+      onchange="handleSpecFile(this.files[0]);this.value=''">
+
+    <div class="divider"></div>
+    <div class="section-label">NIC 대역폭 설정</div>
+    <div class="config-grid" style="margin-bottom:24px">
+      <div class="config-item">
+        <label>인터넷망 NIC (Gbps)</label>
+        <input type="number" id="nicIM" value="10" min="1" step="1">
+        <div class="config-hint">예: 10G NIC → 10 입력</div>
+      </div>
+      <div class="config-item">
+        <label>행정망 NIC (Gbps)</label>
+        <input type="number" id="nicHM" value="2" min="1" step="1">
+        <div class="config-hint">예: 2G NIC → 2 입력</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="section-label">CPU 판정 임계값 (%)</div>
+    <div class="config-grid" style="margin-bottom:24px">
+      <div class="config-item">
+        <label>강력권고 — CPU 평균 미만</label>
+        <input type="number" id="thStrongAvg" value="20" min="1" max="100">
+      </div>
+      <div class="config-item">
+        <label>강력권고 — CPU 최대 미만</label>
+        <input type="number" id="thStrongMax" value="40" min="1" max="100">
+      </div>
+      <div class="config-item">
+        <label>검토 — CPU 평균 미만</label>
+        <input type="number" id="thReviewAvg" value="30" min="1" max="100">
+      </div>
+      <div class="config-item">
+        <label>검토 — CPU 최대 미만</label>
+        <input type="number" id="thReviewMax" value="40" min="1" max="100">
+      </div>
+      <div class="config-item">
+        <label>유지(주의) — CPU 또는 MEM 최대 이상</label>
+        <input type="number" id="thKeepMax" value="70" min="1" max="100">
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="section-label">🎯 스케일 조정 목표 사용률</div>
+    <!-- 목표 사용률 박스 -->
+    <div style="background:linear-gradient(135deg,#EEF2FF 0%,#E0E7FF 100%);border:2px solid #818CF8;border-radius:12px;padding:18px 20px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <span style="font-size:18px">⚙️</span>
+        <div>
+          <div style="font-weight:700;font-size:13px;color:#3730A3">권고 사양 계산 기준값</div>
+          <div style="font-size:11px;color:#6366F1;margin-top:2px">분석 실행 전에 변경하세요. 변경 시 모든 권고 vCPU/RAM이 재계산됩니다.</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div style="background:#fff;border-radius:10px;padding:14px 16px;border:1.5px solid #C7D2FE">
+          <label style="display:block;font-weight:700;font-size:12px;color:#3730A3;margin-bottom:10px">🖥️ CPU 목표 사용률 (%)</label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input type="range" id="targetCpuRange" min="50" max="90" step="5" value="70"
+              oninput="document.getElementById('targetCpu').value=this.value;document.getElementById('targetCpuDisp').textContent=this.value+'%'"
+              style="flex:1;accent-color:#4F46E5">
+            <input type="number" id="targetCpu" value="70" min="10" max="95" step="5"
+              oninput="document.getElementById('targetCpuRange').value=this.value;document.getElementById('targetCpuDisp').textContent=this.value+'%'"
+              style="width:64px;padding:6px 8px;border:1.5px solid #C7D2FE;border-radius:7px;font-size:14px;font-weight:700;color:#3730A3;text-align:center">
+            <span id="targetCpuDisp" style="font-size:18px;font-weight:800;color:#4F46E5;min-width:44px">70%</span>
+          </div>
+          <div style="margin-top:8px;font-size:11px;color:#6366F1">
+            예: 현재 CPU 최대 <strong>30%</strong> → 스케일 다운 후 <strong id="cpuEx">70%</strong>가 되는 최소 스펙
+          </div>
+        </div>
+        <div style="background:#fff;border-radius:10px;padding:14px 16px;border:1.5px solid #C7D2FE">
+          <label style="display:block;font-weight:700;font-size:12px;color:#3730A3;margin-bottom:10px">💾 MEM 목표 사용률 (%)</label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input type="range" id="targetMemRange" min="50" max="90" step="5" value="70"
+              oninput="document.getElementById('targetMem').value=this.value;document.getElementById('targetMemDisp').textContent=this.value+'%'"
+              style="flex:1;accent-color:#4F46E5">
+            <input type="number" id="targetMem" value="70" min="10" max="95" step="5"
+              oninput="document.getElementById('targetMemRange').value=this.value;document.getElementById('targetMemDisp').textContent=this.value+'%'"
+              style="width:64px;padding:6px 8px;border:1.5px solid #C7D2FE;border-radius:7px;font-size:14px;font-weight:700;color:#3730A3;text-align:center">
+            <span id="targetMemDisp" style="font-size:18px;font-weight:800;color:#4F46E5;min-width:44px">70%</span>
+          </div>
+          <div style="margin-top:8px;font-size:11px;color:#6366F1">
+            예: 현재 MEM 최대 <strong>30%</strong> → 스케일 다운 후 <strong id="memEx">70%</strong>가 되는 최소 스펙
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:12px;padding:10px 14px;background:rgba(79,70,229,.08);border-radius:8px;font-size:11px;color:#4338CA;line-height:1.7">
+        <strong>계산 방식:</strong> 권고 vCPU = snap(현재vCPU × 현재최대% ÷ 목표%) → NHN Cloud 단계(2→4→8→16→32→64)로 올림<br>
+        <strong>엑셀 반영:</strong> 보고서 다운로드 시 설정값이 권고사양·예상사용률에 자동 반영되고, 요약 시트에도 표시됩니다.
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="section-label">서비스 현황 <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--gray400)">(요약 보고서 표시용 · 선택 · 숫자만 입력하세요)</span></div>
+    <div style="overflow-x:auto; margin-bottom:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr>
+            <th style="padding:8px 12px;background:var(--gray100);color:var(--gray600);font-weight:600;font-size:11px;text-align:left;border-radius:6px 0 0 0;width:100px">구분</th>
+            <th style="padding:8px 12px;background:var(--gray100);color:var(--gray600);font-weight:600;font-size:11px;text-align:center">이용자 평균<br><span style="font-weight:400;color:var(--gray400)">→ 자동으로 명 추가</span></th>
+            <th style="padding:8px 12px;background:var(--gray100);color:var(--gray600);font-weight:600;font-size:11px;text-align:center">이용자 최대<br><span style="font-weight:400;color:var(--gray400)">→ 자동으로 명 추가</span></th>
+            <th style="padding:8px 12px;background:var(--gray100);color:var(--gray600);font-weight:600;font-size:11px;text-align:center">동시접속 평균<br><span style="font-weight:400;color:var(--gray400)">→ 자동으로 명 추가</span></th>
+            <th style="padding:8px 12px;background:var(--gray100);color:var(--gray600);font-weight:600;font-size:11px;text-align:center">동시접속 최대<br><span style="font-weight:400;color:var(--gray400)">→ 자동으로 명 추가</span></th>
+            <th style="padding:8px 12px;background:var(--gray100);color:var(--gray600);font-weight:600;font-size:11px;text-align:center">처리량 평균<br><span style="font-weight:400;color:var(--gray400)">→ 자동으로 TPS 추가</span></th>
+            <th style="padding:8px 12px;background:var(--gray100);color:var(--gray600);font-weight:600;font-size:11px;text-align:center;border-radius:0 6px 0 0">처리량 최대<br><span style="font-weight:400;color:var(--gray400)">→ 자동으로 TPS 추가</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:8px 12px;font-weight:600;color:var(--navy);background:#EFF6FF;border:1px solid var(--gray200)">인터넷망</td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcIMAvgUser" placeholder="514253" oninput="formatSvcInput(this,'명')" style="text-align:center"></td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcIMMaxUser" placeholder="551233" oninput="formatSvcInput(this,'명')" style="text-align:center"></td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcIMConAvg" placeholder="13409" oninput="formatSvcInput(this,'명')" style="text-align:center"></td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcIMConMax" placeholder="70219" oninput="formatSvcInput(this,'명')" style="text-align:center"></td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcIMAvgTps" placeholder="1571" oninput="formatSvcInput(this,'TPS')" style="text-align:center"></td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcIMMaxTps" placeholder="3893" oninput="formatSvcInput(this,'TPS')" style="text-align:center"></td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px;font-weight:600;color:#166534;background:#F0FDF4;border:1px solid var(--gray200)">행정망</td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcHMAvgUser" placeholder="434872" oninput="formatSvcInput(this,'명')" style="text-align:center"></td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcHMMaxUser" placeholder="554693" oninput="formatSvcInput(this,'명')" style="text-align:center"></td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcHMConAvg" placeholder="6251" oninput="formatSvcInput(this,'명')" style="text-align:center"></td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcHMConMax" placeholder="66994" oninput="formatSvcInput(this,'명')" style="text-align:center"></td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcHMAvgTps" placeholder="1436" oninput="formatSvcInput(this,'TPS')" style="text-align:center"></td>
+            <td style="padding:6px 8px;border:1px solid var(--gray200)"><input class="svc-input" type="text" id="svcHMMaxTps" placeholder="3506" oninput="formatSvcInput(this,'TPS')" style="text-align:center"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--gray400);margin-top:6px">
+      💡 숫자만 입력하면 자동으로 콤마와 단위(명/TPS)가 붙습니다. 입력 중에는 숫자로 보이고, 포커스를 벗어나면 변환됩니다.
+    </div>
+  </div>
+</div>
+
+<!-- ── STEP 3: 예외처리 규칙 -->
+<div class="step-card" id="card3">
+  <div class="step-header">
+    <div class="step-num" id="num3">3</div>
+    <div>
+      <div class="step-title">예외처리 · 서버 역할 규칙</div>
+    </div>
+    <div class="step-desc" id="ruleCount">규칙 0개</div>
+  </div>
+  <div class="step-body">
+    <div class="alert alert-info" style="margin-bottom:16px">
+      💡 서버명에 키워드가 포함되면 해당 규칙이 적용됩니다. 우선순위는 위에서 아래 순서입니다.
+    </div>
+
+    <!-- 버튼 행 -->
+    <div class="btn-row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="addRule()" title="규칙 한 줄 추가">
+        ＋ 규칙 추가
+      </button>
+      <button class="btn btn-outline btn-sm" onclick="loadDefaultRules()" title="기본 규칙으로 초기화">
+        🔄 기본 규칙 불러오기
+      </button>
+      <button class="btn btn-sm" id="saveDefaultBtn" onclick="saveAsDefault()"
+        title="현재 규칙을 기본값으로 저장 (브라우저에 기억됨)"
+        style="background:#EEF2FF;color:#3730A3;border:1.5px solid #C7D2FE;font-weight:600">
+        📌 기본값으로 저장
+      </button>
+      <div style="width:1px;height:24px;background:var(--gray200);margin:0 2px"></div>
+      <button class="btn btn-outline btn-sm" onclick="downloadRuleTemplate()" title="엑셀 양식 다운로드 후 작성">
+        📥 엑셀 양식 다운로드
+      </button>
+      <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0" title="작성한 엑셀 파일 업로드">
+        📤 엑셀 업로드
+        <input type="file" id="ruleFileInput" accept=".xlsx" style="display:none" onchange="uploadRuleFile(this)">
+      </label>
+      <button class="btn btn-outline btn-sm" onclick="saveRulesToExcel()" title="현재 규칙을 엑셀로 저장">
+        💾 현재 규칙 저장
+      </button>
+      <div style="width:1px;height:24px;background:var(--gray200);margin:0 2px"></div>
+      <button class="btn btn-sm" onclick="clearAllRules()"
+        style="background:var(--red-light);color:var(--red);border:1.5px solid #fca5a5"
+        title="규칙 전체 삭제">
+        🗑 전체 삭제
+      </button>
+    </div>
+
+    <div style="overflow-x:auto">
+    <table class="rule-table" id="ruleTable">
+      <thead>
+        <tr>
+          <th style="width:180px">키워드 (서버명 포함 여부)</th>
+          <th style="width:160px">처리 방식</th>
+          <th>사유 / 설명</th>
+          <th style="width:44px"></th>
+        </tr>
+      </thead>
+      <tbody id="ruleBody"></tbody>
+    </table>
+    </div>
+    <div id="ruleEmptyMsg" style="display:none;text-align:center;padding:24px;color:var(--gray400);font-size:13px;border:1.5px dashed var(--gray200);border-radius:8px;margin-top:10px">
+      규칙이 없습니다. 위 버튼으로 추가하거나 기본 규칙을 불러오세요.
+    </div>
+  </div>
+</div>
+
+<!-- ── STEP 4: 분석 실행 -->
+<div class="step-card" id="card4">
+  <div class="step-header">
+    <div class="step-num" id="num4">4</div>
+    <div><div class="step-title">분석 실행 및 결과</div></div>
+  </div>
+  <div class="step-body">
+
+    <!-- 서버 상태 배지 -->
+    <div id="serverBadge" style="display:none;margin-bottom:14px;padding:10px 14px;border-radius:10px;font-size:13px;display:flex;align-items:center;gap:10px">
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="runBtn" onclick="runAnalysis()">
+        <span>📊</span> 분석 시작
+      </button>
+      <button class="btn btn-success" id="dlBtn" style="display:none" onclick="downloadReport()">
+        <span>⬇️</span> 보고서 다운로드
+      </button>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap" style="display:none">
+      <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-logs" id="progressLogs"></div>
+    </div>
+
+    <!-- 결과 요약 -->
+    <div id="resultSummary" style="display:none">
+      <div class="divider"></div>
+      <div class="section-label">분석 결과 요약</div>
+      <div class="result-grid" id="resultGrid"></div>
+      <div class="divider"></div>
+
+      <!-- 탭 미리보기 -->
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('스펙다운')">🟢 스펙다운 후보</button>
+        <button class="tab-btn" onclick="switchTab('유지확정')">🔵 유지 확정</button>
+        <button class="tab-btn" onclick="switchTab('주의')">🔴 유지(주의)</button>
+        <button class="tab-btn" onclick="switchTab('예외')">⚪ 예외처리</button>
+      </div>
+      <div class="tab-panel active" id="tab-스펙다운">
+        <div class="preview-table-wrap" id="preview-스펙다운"></div>
+      </div>
+      <div class="tab-panel" id="tab-유지확정">
+        <div class="preview-table-wrap" id="preview-유지확정"></div>
+      </div>
+      <div class="tab-panel" id="tab-주의">
+        <div class="preview-table-wrap" id="preview-주의"></div>
+      </div>
+      <div class="tab-panel" id="tab-예외">
+        <div class="preview-table-wrap" id="preview-예외"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</div><!-- /steps -->
+</div><!-- /container -->
+
+<script>
+// ══════════════════════════════════════
+// 목표 사용률 슬라이더 실시간 동기화
+// ══════════════════════════════════════
+function syncTargetInputs() {
+  const cpuEl = document.getElementById('targetCpu');
+  const memEl = document.getElementById('targetMem');
+  if (!cpuEl || !memEl) return;
+  // 숫자 입력 → 슬라이더 & 표시값 동기화
+  [['targetCpu','targetCpuRange','targetCpuDisp','cpuEx'],
+   ['targetMem','targetMemRange','targetMemDisp','memEx']].forEach(([inputId, rangeId, dispId, exId]) => {
+    const inp = document.getElementById(inputId);
+    const rng = document.getElementById(rangeId);
+    const disp = document.getElementById(dispId);
+    const ex = document.getElementById(exId);
+    if (!inp) return;
+    inp.addEventListener('input', () => {
+      const v = parseInt(inp.value) || 70;
+      if (rng) rng.value = Math.min(90, Math.max(50, v));
+      if (disp) disp.textContent = v + '%';
+      if (ex) ex.textContent = v + '%';
+    });
+    if (rng) rng.addEventListener('input', () => {
+      inp.value = rng.value;
+      if (disp) disp.textContent = rng.value + '%';
+      if (ex) ex.textContent = rng.value + '%';
+    });
+  });
+}
+document.addEventListener('DOMContentLoaded', syncTargetInputs);
+setTimeout(syncTargetInputs, 100);
+
+// ══════════════════════════════════════
+// 가이드 토글
+// ══════════════════════════════════════
+function toggleGuide() {
+  const toggle = document.getElementById('guideToggle');
+  const body   = document.getElementById('guideBody');
+  const isOpen = body.classList.contains('open');
+  toggle.classList.toggle('open', !isOpen);
+  body.classList.toggle('open', !isOpen);
+}
+
+// ══════════════════════════════════════
+// 전역 상태
+// ══════════════════════════════════════
+let uploadedFiles = [];
+let analysisResult = null;
+let rules = [];
+let specMap = {};  // { 'netlabel|oname_key' : { 시스템명, cpu, ram } }
+let specFile = null;  // 사양 파일 File 객체 (서버 모드용)
+let SERVER_MODE = false;  // 서버 연결 여부
+
+// ══════════════════════════════════════
+// 서버 연결 감지 (페이지 로드 시 자동 확인)
+// ══════════════════════════════════════
+async function detectServer() {
+  const badge = document.getElementById('serverBadge');
+  if (!badge) return;
+  try {
+    const res = await fetch('/ping', { method:'GET', signal: AbortSignal.timeout(800) });
+    if (res.ok) {
+      SERVER_MODE = true;
+      badge.style.display = 'flex';
+      badge.style.background = '#DCFCE7';
+      badge.style.border = '1.5px solid #4ADE80';
+      badge.innerHTML = `
+        <span style="font-size:18px">⚡</span>
+        <div>
+          <div style="font-weight:700;color:#166534">Python 서버 연결됨</div>
+          <div style="font-size:11px;color:#4ADE80;margin-top:1px">분석을 Python이 처리합니다 — 약 3~5초</div>
+        </div>
+        <div style="margin-left:auto;font-size:11px;background:#BBF7D0;color:#166534;padding:3px 10px;border-radius:20px;font-weight:600">서버 모드</div>`;
+      return;
+    }
+  } catch(e) {}
+  SERVER_MODE = false;
+  badge.style.display = 'flex';
+  badge.style.background = '#FEF9C3';
+  badge.style.border = '1.5px solid #FDE047';
+  badge.innerHTML = `
+    <span style="font-size:18px">🌐</span>
+    <div>
+      <div style="font-weight:700;color:#854D0E">브라우저 모드 (서버 미연결)</div>
+      <div style="font-size:11px;color:#A16207;margin-top:1px">JS로 직접 분석 — 파일 수에 따라 30~60초 소요. 빠르게 쓰려면 <code>python server.py</code> 실행</div>
+    </div>
+    <div style="margin-left:auto;font-size:11px;background:#FEF08A;color:#854D0E;padding:3px 10px;border-radius:20px;font-weight:600">브라우저 모드</div>`;
+}
+document.addEventListener('DOMContentLoaded', detectServer);
+setTimeout(detectServer, 300);
+
+// ══════════════════════════════════════
+// 사양 파일 처리
+// ══════════════════════════════════════
+function resetSpecArea() {
+  const area = document.getElementById('specUploadArea');
+  area.style.borderColor = specMap && Object.keys(specMap).length > 0 ? '#4ADE80' : '#86EFAC';
+  area.style.background  = specMap && Object.keys(specMap).length > 0 ? '#F0FDF4' : '#F8FFFE';
+}
+
+function clearSpec() {
+  specMap = {};
+  specFile = null;
+  document.getElementById('specFileLabel').textContent = '클릭하거나 드래그하여 인스턴스 사양 파일 업로드';
+  document.getElementById('specIcon').textContent = '📊';
+  document.getElementById('specStatusBadge').style.display = 'none';
+  document.getElementById('specClearBtn').style.display = 'none';
+  resetSpecArea();
+}
+
+async function handleSpecFile(file) {
+  if (!file) return;
+  if (!file.name.endsWith('.xlsx')) { alert('.xlsx 파일만 업로드 가능합니다.'); return; }
+  specFile = file;  // 서버 모드용으로 원본 File 객체 보관
+  const label  = document.getElementById('specFileLabel');
+  const icon   = document.getElementById('specIcon');
+  const badge  = document.getElementById('specStatusBadge');
+  const clearBtn = document.getElementById('specClearBtn');
+
+  icon.textContent  = '⏳';
+  label.textContent = `읽는 중... ${file.name}`;
+  badge.style.display = 'none';
+
+  try {
+    const data = await readXlsx(file);
+    specMap = buildSpecMap(data);
+    const cnt = Object.keys(specMap).filter(k => k.includes('|')).length;
+
+    icon.textContent   = '✅';
+    label.textContent  = `${file.name}`;
+    badge.textContent  = `${cnt}대 로드됨`;
+    badge.style.display = 'inline-block';
+    badge.style.background = '#DCFCE7'; badge.style.color = '#166534';
+    clearBtn.style.display = 'inline-block';
+    document.getElementById('specUploadArea').style.borderColor = '#4ADE80';
+    document.getElementById('specUploadArea').style.background  = '#F0FDF4';
+  } catch(e) {
+    icon.textContent   = '❌';
+    label.textContent  = `읽기 실패: ${e.message}`;
+    badge.textContent  = '오류';
+    badge.style.display = 'inline-block';
+    badge.style.background = '#FEE2E2'; badge.style.color = '#991B1B';
+    document.getElementById('specUploadArea').style.borderColor = '#FCA5A5';
+    document.getElementById('specUploadArea').style.background  = '#FEF2F2';
+  }
+}
+
+function buildSpecMap(rows) {
+  if (!rows || rows.length === 0) return {};
+  const map = {};
+  const keys = Object.keys(rows[0] || {});
+
+  // 컬럼 자동 감지
+  const find = (cands) => keys.find(k => cands.some(c => k.toLowerCase().includes(c.toLowerCase()))) || null;
+  const cInst = find(['인스턴스명','instance','hostname','oname','서버명']);
+  const cSys  = find(['시스템명','system','서비스명']);
+  const cCpu  = find(['CPU','cpu','vCPU','코어','core']);
+  const cRam  = find(['RAM','ram','MEM','mem','GB','메모리']);
+  const cNet  = find(['망','네트워크','network','zone','net']);
+
+  if (!cInst) { console.warn('인스턴스명 컬럼을 찾지 못했습니다.'); return {}; }
+
+  rows.forEach(r => {
+    const raw  = String(r[cInst] || '').trim();
+    const inst = raw.replace('.novalocal','').toLowerCase().trim();
+    if (!inst || inst === 'null' || inst === 'undefined') return;
+
+    const sysn  = String(r[cSys]  || '').trim();
+    const cpuV  = parseInt(r[cCpu])  || null;
+    const ramV  = parseInt(r[cRam])  || null;
+    const netRaw = String(r[cNet] || '').trim();
+    const nl = netRaw.includes('인터넷') || netRaw.includes('인망') ? '인망'
+             : netRaw.includes('행정')   || netRaw.includes('행망') ? '행망' : '';
+
+    const entry = { 시스템명: sysn || null, cpu: cpuV, ram: ramV };
+    if (nl) map[`${nl}|${inst}`] = entry;
+    if (!map[inst]) map[inst] = entry;  // 망 없는 fallback
+  });
+  return map;
+}
+
+function lookupSpec(netlabel, oname) {
+  const clean = (oname || '').replace('.novalocal','').toLowerCase().trim();
+  return specMap[`${netlabel}|${clean}`] || specMap[clean] || null;
+}
+
+// ══════════════════════════════════════
+// 파일 업로드
+// ══════════════════════════════════════
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('drag');
+  handleFiles([...e.dataTransfer.files]);
+});
+document.getElementById('fileInput').addEventListener('change', e => {
+  handleFiles([...e.target.files]);
+  e.target.value = '';
+});
+
+function handleFiles(files) {
+  files.forEach(f => {
+    if (!f.name.endsWith('.xlsx')) return;
+    if (uploadedFiles.find(u => u.name === f.name)) return;
+    uploadedFiles.push(f);
+  });
+  renderFileList();
+}
+
+function renderFileList() {
+  const list = document.getElementById('fileList');
+  document.getElementById('fileCount').textContent = `파일 ${uploadedFiles.length}개 업로드됨`;
+  if (uploadedFiles.length === 0) { list.innerHTML = ''; return; }
+  list.innerHTML = uploadedFiles.map((f, i) => {
+    const typeTag = guessFileType(f.name);
+    return `<div class="file-item">
+      <span class="fi-icon">📄</span>
+      <span class="fi-name">${f.name}</span>
+      <span class="fi-type">${typeTag}</span>
+      <span class="fi-del" onclick="removeFile(${i})">✕</span>
+    </div>`;
+  }).join('');
+}
+
+function guessFileType(name) {
+  if (name.includes('cpu_mem') && name.includes('최대')) return 'CPU/MEM MAX';
+  if (name.includes('cpu_mem') && name.includes('평균')) return 'CPU/MEM AVG';
+  if (name.includes('network') && name.includes('최대')) return 'NET MAX';
+  if (name.includes('network') && name.includes('평균')) return 'NET AVG';
+  return 'XLSX';
+}
+
+function removeFile(i) {
+  uploadedFiles.splice(i, 1);
+  renderFileList();
+}
+
+// ══════════════════════════════════════
+// 서비스 현황 자동 포맷
+// ══════════════════════════════════════
+function formatSvcInput(el, unit) {
+  // 포커스 중일 때는 숫자만 표시, 포커스 벗어나면 포맷 적용
+  el.addEventListener('focus', function() {
+    // 숫자만 추출해서 보여주기
+    const raw = el.value.replace(/[^0-9]/g, '');
+    el.value = raw;
+    el.classList.remove('formatted');
+  }, { once: true });
+}
+
+// 포커스 벗어날 때 포맷 적용 (전역 이벤트 위임)
+document.addEventListener('blur', function(e) {
+  if (!e.target.classList.contains('svc-input')) return;
+  const el = e.target;
+  const id = el.id;
+  const unit = (id.includes('Tps')) ? 'TPS' : '명';
+  applySvcFormat(el, unit);
+}, true);
+
+function applySvcFormat(el, unit) {
+  const raw = el.value.replace(/[^0-9]/g, '');
+  if (!raw) { el.value = ''; el.classList.remove('formatted'); return; }
+  const num = parseInt(raw, 10);
+  el.value = num.toLocaleString('ko-KR') + ' ' + unit;
+  el.classList.add('formatted');
+}
+
+// 엑셀 저장 시 사용하는 값 가져오기 (포맷된 값 그대로)
+function getSvcVal(id) {
+  const el = document.getElementById(id);
+  if (!el) return '-';
+  return el.value || '-';
+}
+
+// ══════════════════════════════════════
+// 예외처리 규칙
+// ══════════════════════════════════════
+function loadDefaultRules() {
+  rules = [
+    { kw: 'tibero',       action: 'except', reason: '물리장비 - 예외처리' },
+    { kw: 'cicd',         action: 'keep',   reason: '빌드워커(빌드 시 부하 특성) - 유지' },
+    { kw: 'redis-session',action: 'except', reason: '신규 Redis(설치 중) - 예외처리' },
+    { kw: 'redis-vector', action: 'except', reason: '신규 Redis(설치 중) - 예외처리' },
+    { kw: 'ai-search',    action: 'except', reason: '신규 서비스(3/4 오픈) - 예외처리' },
+    { kw: 'apig-imc',     action: 'keep',   reason: 'MEM 상시 80% 초반 유지 - 유지' },
+    { kw: 'appiron',      action: 'except', reason: '신규 서버(수집 미흡) - 예외처리' },
+    { kw: 'ahnlab',       action: 'keep',   reason: '보안 솔루션(부하 특성) - 유지' },
+    { kw: 'whatap',       action: 'keep',   reason: '모니터링 서버 - 유지' },
+    { kw: 'intraplus',    action: 'review', reason: '일시적 피크 확인됨 → 스펙 다운 검토' },
+    { kw: 'ionengs',      action: 'keep',   reason: '접근제어 솔루션 - 유지' },
+    { kw: 'static',       action: 'keep',   reason: '폐쇄망 CDN 대체 서버(중요도 높음) - 유지' },
+    { kw: 'noti-web',     action: 'down',   reason: '분기별 점검 페이지 전용(연 3~4회) - 스펙 다운' },
+    { kw: 'sorry-web',    action: 'down',   reason: '분기별 점검 페이지 전용(연 3~4회) - 스펙 다운' },
+    { kw: 'tracer',       action: 'keep',   reason: '사용자제어 솔루션 - 유지' },
+    { kw: 'pdf',          action: 'keep',   reason: '주요 서버 - 유지' },
+    { kw: 'edms',         action: 'keep',   reason: '주요 서버 - 유지' },
+  ];
+  renderRules();
+}
+
+function addRule(kw='', action='except', reason='') {
+  rules.push({ kw, action, reason });
+  renderRules();
+}
+
+function removeRule(i) {
+  rules.splice(i, 1);
+  renderRules();
+}
+
+function clearAllRules() {
+  if (rules.length === 0) return;
+  if (!confirm(`규칙 ${rules.length}개를 모두 삭제하시겠습니까?`)) return;
+  rules = [];
+  renderRules();
+}
+
+function renderRules() {
+  const tbody = document.getElementById('ruleBody');
+  const emptyMsg = document.getElementById('ruleEmptyMsg');
+  const table = document.getElementById('ruleTable');
+
+  // 카운트 + 저장 배지
+  showSavedBadge();
+
+  if (rules.length === 0) {
+    tbody.innerHTML = '';
+    table.style.display = 'none';
+    emptyMsg.style.display = 'block';
+    return;
+  }
+  table.style.display = '';
+  emptyMsg.style.display = 'none';
+
+  const actionOpts = [
+    { v:'except', l:'예외처리 (분석 제외)' },
+    { v:'keep',   l:'유지 확정' },
+    { v:'down',   l:'스펙 다운 (강력권고)' },
+    { v:'review', l:'일시피크 → 검토' },
+  ];
+  const actionColors = { except:'var(--gray100)', keep:'var(--teal-light)', down:'var(--green-light)', review:'var(--orange-light)' };
+
+  tbody.innerHTML = rules.map((r, i) => `
+    <tr>
+      <td><input type="text" value="${r.kw}" oninput="rules[${i}].kw=this.value" placeholder="예: tibero" style="font-family:'JetBrains Mono',monospace"></td>
+      <td>
+        <select onchange="rules[${i}].action=this.value;this.parentElement.style.background=({except:'var(--gray100)',keep:'var(--teal-light)',down:'var(--green-light)',review:'var(--orange-light)'})[this.value]||''" style="background:${actionColors[r.action]||''}">
+          ${actionOpts.map(o => `<option value="${o.v}" ${r.action===o.v?'selected':''}>${o.l}</option>`).join('')}
+        </select>
+      </td>
+      <td><input type="text" value="${r.reason}" oninput="rules[${i}].reason=this.value" placeholder="처리 사유 입력"></td>
+      <td><button class="del-btn" onclick="removeRule(${i})" title="이 규칙 삭제">✕</button></td>
+    </tr>`).join('');
+}
+
+// ── 엑셀 양식 다운로드
+function downloadRuleTemplate() {
+  const wb = XLSX.utils.book_new();
+  const wsData = [
+    ['키워드', '처리방식', '사유/설명'],
+    ['', '', ''],
+    ['', '', ''],
+    ['', '', ''],
+    ['', '', ''],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  // 헤더 스타일
+  const bdr = { top:{style:'thin',color:{rgb:'BBBBBB'}}, bottom:{style:'thin',color:{rgb:'BBBBBB'}}, left:{style:'thin',color:{rgb:'BBBBBB'}}, right:{style:'thin',color:{rgb:'BBBBBB'}} };
+  ['A1','B1','C1'].forEach(addr => {
+    ws[addr].s = { font:{name:'Arial',sz:11,bold:true,color:{rgb:'FFFFFF'}}, fill:{patternType:'solid',fgColor:{rgb:'1F3864'}}, alignment:{horizontal:'center',vertical:'center'}, border:bdr };
+  });
+
+  // 처리방식 안내 (D열)
+  ws['E1'] = { v:'처리방식 입력값 안내', t:'s', s:{ font:{name:'Arial',sz:10,bold:true,color:{rgb:'1F3864'}}, fill:{patternType:'solid',fgColor:{rgb:'EEF2FF'}} } };
+  ws['E2'] = { v:'except  →  예외처리 (분석 제외)', t:'s', s:{ font:{name:'Arial',sz:10,color:{rgb:'5A6480'}} } };
+  ws['E3'] = { v:'keep    →  유지 확정', t:'s', s:{ font:{name:'Arial',sz:10,color:{rgb:'0F766E'}} } };
+  ws['E4'] = { v:'down    →  스펙 다운 (강력권고)', t:'s', s:{ font:{name:'Arial',sz:10,color:{rgb:'166534'}} } };
+  ws['E5'] = { v:'review  →  일시피크 → 검토', t:'s', s:{ font:{name:'Arial',sz:10,color:{rgb:'9A3412'}} } };
+
+  ws['!cols'] = [{wch:22},{wch:14},{wch:40},{wch:4},{wch:34}];
+  ws['!rows'] = [{hpt:24},{hpt:20},{hpt:20},{hpt:20},{hpt:20}];
+  ws['!ref'] = 'A1:E5';
+
+  XLSX.utils.book_append_sheet(wb, ws, '규칙 입력');
+  XLSX.writeFile(wb, '예외처리_규칙_양식.xlsx');
+}
+
+// ── 현재 규칙을 엑셀로 저장
+function saveRulesToExcel() {
+  if (rules.length === 0) { alert('저장할 규칙이 없습니다.'); return; }
+  const wb = XLSX.utils.book_new();
+  const wsData = [['키워드','처리방식','사유/설명']];
+  rules.forEach(r => wsData.push([r.kw, r.action, r.reason]));
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  const bdr = { top:{style:'thin',color:{rgb:'BBBBBB'}}, bottom:{style:'thin',color:{rgb:'BBBBBB'}}, left:{style:'thin',color:{rgb:'BBBBBB'}}, right:{style:'thin',color:{rgb:'BBBBBB'}} };
+  ['A1','B1','C1'].forEach(addr => {
+    ws[addr].s = { font:{name:'Arial',sz:11,bold:true,color:{rgb:'FFFFFF'}}, fill:{patternType:'solid',fgColor:{rgb:'1F3864'}}, alignment:{horizontal:'center',vertical:'center'}, border:bdr };
+  });
+  const actionBg = { except:'F5F5F5', keep:'B2EBF2', down:'C8E6C9', review:'FFE0B2' };
+  rules.forEach((r, ri) => {
+    const R = ri + 1;
+    const rowBg = ri%2===0 ? 'F5F5F5' : 'FFFFFF';
+    const aAddr = XLSX.utils.encode_cell({r:R,c:1});
+    if (ws[aAddr]) ws[aAddr].s = { font:{name:'Arial',sz:10}, fill:{patternType:'solid',fgColor:{rgb:actionBg[r.action]||'FFFFFF'}}, alignment:{horizontal:'center'}, border:bdr };
+  });
+
+  ws['!cols'] = [{wch:22},{wch:14},{wch:44}];
+  ws['!rows'] = [{hpt:24}];
+  rules.forEach(() => ws['!rows'].push({hpt:18}));
+  XLSX.utils.book_append_sheet(wb, ws, '규칙 목록');
+
+  const today = new Date();
+  XLSX.writeFile(wb, `예외처리_규칙_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.xlsx`);
+}
+
+// ── 엑셀 파일에서 규칙 불러오기
+function uploadRuleFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+
+      // 첫 행이 헤더인지 확인 (키워드/처리방식/사유 포함 여부)
+      let startRow = 0;
+      if (data[0] && String(data[0][0]).includes('키워드')) startRow = 1;
+
+      const newRules = [];
+      for (let i = startRow; i < data.length; i++) {
+        const row = data[i];
+        const kw     = String(row[0]||'').trim();
+        const action = String(row[1]||'').trim().toLowerCase();
+        const reason = String(row[2]||'').trim();
+        if (!kw) continue;
+        const validActions = ['except','keep','down','review'];
+        newRules.push({ kw, action: validActions.includes(action) ? action : 'except', reason });
+      }
+
+      if (newRules.length === 0) { alert('유효한 규칙을 찾지 못했습니다.\n키워드 컬럼이 비어있는지 확인하세요.'); return; }
+
+      if (rules.length > 0) {
+        const choice = confirm(`현재 규칙 ${rules.length}개가 있습니다.\n\n[확인] 기존 규칙에 추가\n[취소] 기존 규칙을 대체`);
+        if (choice) {
+          rules = [...rules, ...newRules];
+        } else {
+          rules = newRules;
+        }
+      } else {
+        rules = newRules;
+      }
+      renderRules();
+      alert(`규칙 ${newRules.length}개를 불러왔습니다.`);
+    } catch(err) {
+      alert('파일을 읽는 중 오류가 발생했습니다: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  input.value = '';
+}
+
+// 초기화 — 저장된 규칙이 있으면 우선 사용, 없으면 기본 규칙
+const LS_KEY = 'resource_analyze_rules';
+function initRules() {
+  try {
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        rules = parsed;
+        renderRules();
+        showSavedBadge();
+        return;
+      }
+    }
+  } catch(e) {}
+  loadDefaultRules();
+}
+
+function saveAsDefault() {
+  if (rules.length === 0) { alert('저장할 규칙이 없습니다.'); return; }
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(rules));
+    showSavedBadge();
+    // 버튼 피드백
+    const btn = document.getElementById('saveDefaultBtn');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '✅ 저장됨!';
+    btn.style.background = '#DCFCE7';
+    btn.style.color = '#166534';
+    btn.style.borderColor = '#86EFAC';
+    setTimeout(() => {
+      btn.innerHTML = orig;
+      btn.style.background = '#EEF2FF';
+      btn.style.color = '#3730A3';
+      btn.style.borderColor = '#C7D2FE';
+    }, 2000);
+  } catch(e) {
+    alert('저장 중 오류가 발생했습니다: ' + e.message);
+  }
+}
+
+function showSavedBadge() {
+  const countEl = document.getElementById('ruleCount');
+  const saved = localStorage.getItem(LS_KEY);
+  if (saved) {
+    countEl.innerHTML = `규칙 ${rules.length}개 <span style="font-size:11px;background:#EEF2FF;color:#3730A3;border:1px solid #C7D2FE;padding:2px 7px;border-radius:4px;margin-left:6px;font-weight:600">📌 저장됨</span>`;
+  } else {
+    countEl.textContent = `규칙 ${rules.length}개`;
+  }
+}
+
+initRules();
+
+// ══════════════════════════════════════
+// 분석 엔진
+// ══════════════════════════════════════
+function log(msg, type='') {
+  const el = document.getElementById('progressLogs');
+  const time = new Date().toLocaleTimeString('ko-KR');
+  el.innerHTML += `<div class="${type?'log-'+type:''}">[${time}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+  console.log(`[${time}] [${type||'log'}] ${msg}`);
+}
+
+function setProgress(pct) {
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+
+async function readXlsx(file) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws, { defval: null });
+      resolve(data);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function parseDate(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  const s = String(v);
+  const m = s.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+  return null;
+}
+
+function classifyFile(name) {
+  const n = name.normalize('NFC').toLowerCase();
+  const network = n.includes('\uc778\ub9dd') ? 'IM' : n.includes('\ud589\ub9dd') ? 'HM' : null;
+  const type = n.includes('cpu_mem') ? 'cpu' : n.includes('network') ? 'net' : null;
+  const stat = n.includes('\ucd5c\ub300') ? 'max' : n.includes('\ud3c9\uade0') ? 'avg' : null;
+  return (network && type && stat) ? { 망: network, type, stat } : null;
+}
+
+async function runAnalysis() {
+  if (uploadedFiles.length === 0) { alert('파일을 먼저 업로드해주세요.'); return; }
+
+  // ── 서버 모드: Python으로 전송
+  if (SERVER_MODE) {
+    await runAnalysisServer();
+    return;
+  }
+
+  // ── 브라우저 모드: 기존 JS 분석 (아래 코드 그대로)
+
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('resultSummary').style.display = 'none';
+  document.getElementById('dlBtn').style.display = 'none';
+  document.getElementById('progressLogs').innerHTML = '';
+  document.getElementById('runBtn').disabled = true;
+  setProgress(5);
+
+  log('🔍 파일 분류 중...', 'info');
+  await sleep(100);
+
+  // 파일 분류
+  const buckets = { IM_cpu_max:[], IM_cpu_avg:[], HM_cpu_max:[], HM_cpu_avg:[],
+                    IM_net_max:[], IM_net_avg:[], HM_net_max:[], HM_net_avg:[] };
+
+  for (const f of uploadedFiles) {
+    const cls = classifyFile(f.name);
+    if (!cls) { log(`⚠ 분류 불가: ${f.name}`, 'warn'); continue; }
+    const key = `${cls.망}_${cls.type}_${cls.stat}`;
+    buckets[key].push(f);
+    log(`✓ ${f.name} → ${key}`, 'ok');
+  }
+  setProgress(15);
+
+  // 데이터 로드 및 병합
+  const totalFiles = Object.values(buckets).reduce((s, a) => s + a.length, 0);
+  log(`📂 데이터 로드 중... (총 ${totalFiles}개 파일)`, 'info');
+  const merged = {};
+  let filesDone = 0;
+  for (const [key, files] of Object.entries(buckets)) {
+    if (files.length === 0) continue;
+    let rows = [];
+    for (const f of files) {
+      filesDone++;
+      log(`📄 [${filesDone}/${totalFiles}] ${f.name} 읽는 중...`, 'info');
+      await sleep(30); // 브라우저 UI 업데이트 허용
+      try {
+        const data = await readXlsx(f);
+        rows = rows.concat(data);
+        log(`  ✓ ${f.name}: ${data.length}행 로드`, 'ok');
+      } catch(e) {
+        log(`  ❌ ${f.name} 읽기 실패: ${e.message}`, 'warn');
+        console.error(`[ERROR] ${f.name}`, e);
+      }
+      setProgress(15 + Math.floor(filesDone / totalFiles * 20));
+      await sleep(30);
+    }
+    // 중복 제거: oname + time 기준
+    const seen = new Set();
+    merged[key] = rows.filter(r => {
+      if (!r.oname || r.oname === null) return false;
+      const dt = parseDate(r.time);
+      if (!dt) return false;
+      const k = `${r.oname}|${dt.toDateString()}`;
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    }).map(r => ({ ...r, time: parseDate(r.time) }));
+    log(`✓ ${key}: 최종 ${merged[key].length}행 (중복제거 완료)`, 'ok');
+    await sleep(30);
+  }
+  setProgress(35);
+
+  // CPU/MEM 서버별 집계
+  log('📊 서버별 집계 중...', 'info');
+  function summarizeCpu(maxRows, avgRows, netlabel) {
+    const mMap = {}, aMap = {};
+    maxRows.forEach(r => {
+      if (!r.oname) return;
+      if (!mMap[r.oname]) mMap[r.oname] = { cpu_max: -Infinity, mem_max: -Infinity };
+      const cpu = parseFloat(r.cpu); const mem = parseFloat(r.memory_pused);
+      if (!isNaN(cpu)) mMap[r.oname].cpu_max = Math.max(mMap[r.oname].cpu_max, cpu);
+      if (!isNaN(mem)) mMap[r.oname].mem_max = Math.max(mMap[r.oname].mem_max, mem);
+    });
+    const aCnt = {}, aSum = {};
+    avgRows.forEach(r => {
+      if (!r.oname) return;
+      if (!aSum[r.oname]) { aSum[r.oname] = { cpu:0, mem:0 }; aCnt[r.oname] = { cpu:0, mem:0 }; }
+      const cpu = parseFloat(r.cpu); const mem = parseFloat(r.memory_pused);
+      if (!isNaN(cpu)) { aSum[r.oname].cpu += cpu; aCnt[r.oname].cpu++; }
+      if (!isNaN(mem)) { aSum[r.oname].mem += mem; aCnt[r.oname].mem++; }
+    });
+    return Object.keys(mMap).map(oname => ({
+      oname, netlabel,
+      cpu_max: mMap[oname].cpu_max === -Infinity ? 0 : +mMap[oname].cpu_max.toFixed(1),
+      mem_max: mMap[oname].mem_max === -Infinity ? 0 : +mMap[oname].mem_max.toFixed(1),
+      cpu_avg: aCnt[oname]?.cpu ? +(aSum[oname].cpu / aCnt[oname].cpu).toFixed(1) : 0,
+      mem_avg: aCnt[oname]?.mem ? +(aSum[oname].mem / aCnt[oname].mem).toFixed(1) : 0,
+    }));
+  }
+
+  function summarizeNet(maxRows, avgRows, netlabel, nicMbps) {
+    const mMap = {}, aMap = {};
+    maxRows.forEach(r => {
+      if (!r.oname) return;
+      if (!mMap[r.oname]) mMap[r.oname] = { in_max:-Infinity, out_max:-Infinity };
+      const i = parseFloat(r.trafficIn); const o = parseFloat(r.trafficOut);
+      if (!isNaN(i)) mMap[r.oname].in_max = Math.max(mMap[r.oname].in_max, i);
+      if (!isNaN(o)) mMap[r.oname].out_max = Math.max(mMap[r.oname].out_max, o);
+    });
+    const aCnt = {}, aSum = {};
+    avgRows.forEach(r => {
+      if (!r.oname) return;
+      if (!aSum[r.oname]) { aSum[r.oname]={i:0,o:0}; aCnt[r.oname]={i:0,o:0}; }
+      const i = parseFloat(r.trafficIn); const o = parseFloat(r.trafficOut);
+      if (!isNaN(i)) { aSum[r.oname].i += i; aCnt[r.oname].i++; }
+      if (!isNaN(o)) { aSum[r.oname].o += o; aCnt[r.oname].o++; }
+    });
+    return Object.keys(mMap).map(oname => {
+      const inMax  = mMap[oname].in_max  === -Infinity ? 0 : mMap[oname].in_max  / 1e6;
+      const outMax = mMap[oname].out_max === -Infinity ? 0 : mMap[oname].out_max / 1e6;
+      const inAvg  = aCnt[oname]?.i ? aSum[oname].i / aCnt[oname].i / 1e6 : 0;
+      const outAvg = aCnt[oname]?.o ? aSum[oname].o / aCnt[oname].o / 1e6 : 0;
+      return {
+        oname, netlabel,
+        in_max:  +inMax.toFixed(1),  out_max: +outMax.toFixed(1),
+        in_avg:  +inAvg.toFixed(1),  out_avg: +outAvg.toFixed(1),
+        in_util_pct:  +(inMax  / nicMbps * 100).toFixed(1),
+        out_util_pct: +(outMax / nicMbps * 100).toFixed(1),
+      };
+    });
+  }
+
+  const nicIM = (parseFloat(document.getElementById('nicIM').value) || 10) * 1024;
+  const nicHM = (parseFloat(document.getElementById('nicHM').value) || 2)  * 1024;
+
+  log('⚙️ 인망 CPU/MEM 집계 중...', 'info'); await sleep(30);
+  const imCpu = summarizeCpu(merged.IM_cpu_max||[], merged.IM_cpu_avg||[], '인망');
+  log(`  ✓ 인망 CPU: ${imCpu.length}대`, 'ok'); await sleep(30);
+
+  log('⚙️ 행망 CPU/MEM 집계 중...', 'info'); await sleep(30);
+  const hmCpu = summarizeCpu(merged.HM_cpu_max||[], merged.HM_cpu_avg||[], '행망');
+  log(`  ✓ 행망 CPU: ${hmCpu.length}대`, 'ok'); await sleep(30);
+
+  log('⚙️ 인망 네트워크 집계 중...', 'info'); await sleep(30);
+  const imNet = summarizeNet(merged.IM_net_max||[], merged.IM_net_avg||[], '인망', nicIM);
+  log(`  ✓ 인망 네트워크: ${imNet.length}대`, 'ok'); await sleep(30);
+
+  log('⚙️ 행망 네트워크 집계 중...', 'info'); await sleep(30);
+  const hmNet = summarizeNet(merged.HM_net_max||[], merged.HM_net_avg||[], '행망', nicHM);
+  log(`  ✓ 행망 네트워크: ${hmNet.length}대`, 'ok'); await sleep(30);
+
+  const cpuAll = [...imCpu, ...hmCpu];
+
+  setProgress(55);
+  log(`✓ 인망 ${imCpu.length}대 / 행망 ${hmCpu.length}대 집계 완료`, 'ok');
+
+  // 판정 임계값
+  const thSAvg = parseFloat(document.getElementById('thStrongAvg').value) || 20;
+  const thSMax = parseFloat(document.getElementById('thStrongMax').value) || 40;
+  const thRAvg = parseFloat(document.getElementById('thReviewAvg').value) || 30;
+  const thRMax = parseFloat(document.getElementById('thReviewMax').value) || 40;
+  const thKMax = parseFloat(document.getElementById('thKeepMax').value)   || 70;
+
+  // 예외처리 규칙 적용
+  function applyRules(oname) {
+    for (const r of rules) {
+      if (!r.kw) continue;
+      if (oname.toLowerCase().includes(r.kw.toLowerCase())) {
+        return { action: r.action, reason: r.reason };
+      }
+    }
+    return null;
+  }
+
+  function grade(row) {
+    const rule = applyRules(row.oname);
+    if (rule) {
+      if (rule.action === 'except') return { panjung: '예외처리', reason: rule.reason };
+      if (rule.action === 'keep')   return { panjung: '유지(확정)', reason: rule.reason };
+      if (rule.action === 'down')   return { panjung: '강력권고', reason: rule.reason };
+      if (rule.action === 'review') return { panjung: '일시적피크→검토', reason: rule.reason };
+    }
+    if (row.cpu_max >= thKMax || row.mem_max >= thKMax)         return { panjung: '유지(주의)', reason: `CPU 최대 ${row.cpu_max}% 또는 MEM 최대 ${row.mem_max}%` };
+    if (row.cpu_avg < thSAvg && row.cpu_max < thSMax)           return { panjung: '강력권고',   reason: `CPU 평균 ${row.cpu_avg}% / 최대 ${row.cpu_max}%` };
+    if (row.cpu_avg < thRAvg && row.cpu_max < thRMax)           return { panjung: '검토',        reason: `CPU 평균 ${row.cpu_avg}% / 최대 ${row.cpu_max}%` };
+    return { panjung: '보통', reason: `CPU 평균 ${row.cpu_avg}% / 최대 ${row.cpu_max}%` };
+  }
+
+  const targetCpu = parseFloat(document.getElementById('targetCpu')?.value) || 70;
+  const targetMem = parseFloat(document.getElementById('targetMem')?.value) || 70;
+  const NHN_STEPS = [2, 4, 8, 16, 32, 64];
+
+  cpuAll.forEach(row => {
+    const g = grade(row);
+    row.panjung = g.panjung;
+    row.reason  = g.reason;
+
+    // ── specMap 매핑
+    const spec = lookupSpec(row.netlabel, row.oname);
+    row.시스템명  = spec?.시스템명 || null;
+    row.현재_cpu  = spec?.cpu     || null;
+    row.현재_ram  = spec?.ram     || null;
+
+    // ── 권고 스펙 계산
+    row.권고_cpu   = null; row.권고_ram  = null;
+    row.스케일방향 = null;
+    row.예상_cpu   = null; row.예상_mem  = null;
+
+    const noRec = ['예외처리','유지(확정)','유지(주의)','보통'];
+    if (noRec.includes(row.panjung)) {
+      row.스케일방향 = row.panjung;
+      return;
+    }
+    if (!row.현재_cpu || !row.현재_ram) {
+      row.스케일방향 = '확인필요(스펙파일 없음)';
+      return;
+    }
+
+    const curC = row.현재_cpu, curR = row.현재_ram;
+    const rpc  = curR / curC;
+    const reqC = Math.max(
+      (curC * row.cpu_max) / targetCpu,
+      (curR * row.mem_max) / (targetMem * rpc)
+    );
+
+    const snapUp   = v => NHN_STEPS.find(s => s >= v) || NHN_STEPS[NHN_STEPS.length-1];
+    const snapDown = v => [...NHN_STEPS].reverse().find(s => s <  v) || NHN_STEPS[0];
+
+    let recC;
+    if (['강력권고','검토','일시적피크→검토'].includes(row.panjung)) {
+      recC = snapUp(reqC);
+      if (recC >= curC) recC = snapDown(curC);
+      recC = Math.max(recC, NHN_STEPS[0]);
+      row.스케일방향 = recC < curC ? '스케일 다운' : '유지';
+    } else {
+      recC = snapUp(reqC);
+      if (recC <= curC) recC = snapUp(curC + 0.1);
+      row.스케일방향 = recC > curC ? '스케일 업' : '유지';
+    }
+
+    const recR = Math.round(recC * rpc);
+    row.권고_cpu   = recC;
+    row.권고_ram   = recR;
+    row.예상_cpu   = recC > 0 ? +(row.cpu_max * curC / recC).toFixed(1) : null;
+    row.예상_mem   = recR > 0 ? +(row.mem_max * curR / recR).toFixed(1) : null;
+  });
+
+  setProgress(70);
+  const hasSpec = Object.keys(specMap).length > 0;
+  log(`✓ 판정 완료${hasSpec ? ` / 스펙 매핑: ${cpuAll.filter(r=>r.현재_cpu).length}/${cpuAll.length}대` : ' (사양 파일 없음)'}`, 'ok');
+
+  log(`✓ 스펙다운 후보: ${cand.length}대 / 유지확정: ${keepConf.length}대 / 예외: ${except.length}대`, 'ok');
+  setProgress(85);
+
+  // 날짜 범위 계산
+  const allDates = [...(merged.IM_cpu_max||[]), ...(merged.HM_cpu_max||[])]
+    .map(r => r.time).filter(Boolean).map(d => d.getTime());
+  const dateMin = allDates.length ? new Date(Math.min(...allDates)) : null;
+  const dateMax = allDates.length ? new Date(Math.max(...allDates)) : null;
+  analysisResult.dateRange = dateMin && dateMax
+    ? `${fmtDate(dateMin)} ~ ${fmtDate(dateMax)}`
+    : '기간 미확인';
+
+  setProgress(100);
+  log('✅ 분석 완료!', 'ok');
+
+  renderResultSummary();
+  document.getElementById('dlBtn').style.display = 'inline-flex';
+  document.getElementById('runBtn').disabled = false;
+}
+
+// ══════════════════════════════════════
+// 서버 모드 분석 함수
+// ══════════════════════════════════════
+async function runAnalysisServer() {
+  const runBtn = document.getElementById('runBtn');
+  const dlBtn  = document.getElementById('dlBtn');
+  const pw     = document.getElementById('progressWrap');
+  const logs   = document.getElementById('progressLogs');
+
+  pw.style.display   = 'block';
+  dlBtn.style.display = 'none';
+  document.getElementById('resultSummary').style.display = 'none';
+  logs.innerHTML = '';
+  runBtn.disabled = true;
+  setProgress(5);
+
+  log(`⚡ 서버 모드 — Python으로 분석 요청 중...`, 'info');
+  log(`📁 데이터 파일 ${uploadedFiles.length}개 + 사양 파일 ${specFile ? '있음' : '없음'}`, 'info');
+  log(`⚙️ 목표: CPU ${document.getElementById('targetCpu')?.value||70}% / MEM ${document.getElementById('targetMem')?.value||70}%`, 'info');
+
+  // FormData 구성
+  const form = new FormData();
+  uploadedFiles.forEach(f => form.append('data_files', f));
+  if (specFile) form.append('spec_file', specFile);
+
+  // 설정값 수집
+  const config = {
+    cpu_target: parseFloat(document.getElementById('targetCpu')?.value) || 70,
+    mem_target: parseFloat(document.getElementById('targetMem')?.value) || 70,
+    nic_im:     parseFloat(document.getElementById('nicIM')?.value)     || 10,
+    nic_hm:     parseFloat(document.getElementById('nicHM')?.value)     || 2,
+    rules: rules.map(r => ({ kw: r.kw, action: r.action, reason: r.reason })),
+    svc: {
+      im_avg_user: getSvcVal('svcIMAvgUser'), im_max_user: getSvcVal('svcIMMaxUser'),
+      im_con_avg:  getSvcVal('svcIMConAvg'),  im_con_max:  getSvcVal('svcIMConMax'),
+      im_avg_tps:  getSvcVal('svcIMAvgTps'),  im_max_tps:  getSvcVal('svcIMMaxTps'),
+      hm_avg_user: getSvcVal('svcHMAvgUser'), hm_max_user: getSvcVal('svcHMMaxUser'),
+      hm_con_avg:  getSvcVal('svcHMConAvg'),  hm_con_max:  getSvcVal('svcHMConMax'),
+      hm_avg_tps:  getSvcVal('svcHMAvgTps'),  hm_max_tps:  getSvcVal('svcHMMaxTps'),
+    }
+  };
+  form.append('config', JSON.stringify(config));
+
+  // 프로그레스 애니메이션
+  setProgress(15);
+  log('📤 서버로 전송 중...', 'info');
+  let animPct = 15;
+  const animTimer = setInterval(() => {
+    if (animPct < 85) { animPct += 3; setProgress(animPct); }
+  }, 300);
+
+  try {
+    const res = await fetch('/analyze', { method: 'POST', body: form });
+    clearInterval(animTimer);
+
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      try { const j = await res.json(); errMsg = j.error || j.detail || errMsg; } catch {}
+      log(`❌ 서버 오류: ${errMsg}`, 'warn');
+      setProgress(0);
+      runBtn.disabled = false;
+      return;
+    }
+
+    setProgress(95);
+    log('✅ 분석 완료! 엑셀 다운로드 중...', 'ok');
+
+    // 엑셀 파일 다운로드
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    const today = new Date();
+    a.download = `리소스_분석보고서_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setProgress(100);
+    log(`📥 다운로드 완료 (${(blob.size/1024).toFixed(0)}KB)`, 'ok');
+
+    // 결과 요약은 서버 모드에서는 간단하게 표시
+    const infoDiv = document.getElementById('resultSummary');
+    if (infoDiv) {
+      infoDiv.style.display = 'block';
+      const grid = document.getElementById('resultGrid');
+      if (grid) grid.innerHTML = `
+        <div class="result-card" style="background:#DCFCE7;grid-column:1/-1;justify-content:center">
+          <div class="rc-num" style="color:#166534;font-size:28px">✅</div>
+          <div class="rc-label" style="color:#166534">서버에서 분석 완료 — 엑셀이 자동 다운로드됐습니다</div>
+        </div>`;
+    }
+
+  } catch(e) {
+    clearInterval(animTimer);
+    if (e.name === 'AbortError' || e.message.includes('fetch')) {
+      log(`❌ 서버 연결 실패: ${e.message}`, 'warn');
+      log(`💡 server.py가 실행 중인지 확인하세요 (python server.py)`, 'info');
+      // 서버 모드 해제하고 재감지
+      SERVER_MODE = false;
+      detectServer();
+    } else {
+      log(`❌ 오류: ${e.message}`, 'warn');
+    }
+    setProgress(0);
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ══════════════════════════════════════
+// 결과 요약 렌더링
+// ══════════════════════════════════════
+function renderResultSummary() {
+  const { cand, keepConf, keepWarn, except, cpuAll } = analysisResult;
+
+  const cards = [
+    { num: cpuAll.length,          label: '전체 분석 서버',  bg: 'var(--gray100)',       color: 'var(--navy)' },
+    { num: cand.filter(r=>r.panjung==='강력권고').length, label: '🟢 강력권고', bg: '#dcfce7', color: '#166534' },
+    { num: cand.filter(r=>r.panjung==='검토').length,     label: '🟡 검토',     bg: '#fef9c3', color: '#854d0e' },
+    { num: cand.filter(r=>r.panjung==='일시적피크→검토').length, label: '🟠 일시피크→검토', bg: '#ffedd5', color: '#9a3412' },
+    { num: keepWarn.length,        label: '🔴 유지(주의)',   bg: '#fee2e2',      color: '#991b1b' },
+    { num: keepConf.length,        label: '🔵 유지(확정)',   bg: '#cffafe',      color: '#155e75' },
+  ];
+
+  document.getElementById('resultGrid').innerHTML = cards.map(c => `
+    <div class="result-card" style="background:${c.bg}">
+      <div class="rc-num" style="color:${c.color}">${c.num}</div>
+      <div class="rc-label" style="color:${c.color}">${c.label}</div>
+    </div>`).join('');
+
+  // 탭 미리보기 렌더링
+  renderPreview('스펙다운', cand,     ['망','서버명','CPU최대','CPU평균','MEM최대','MEM평균','판정']);
+  renderPreview('유지확정', keepConf, ['망','서버명','CPU최대','CPU평균','MEM최대','MEM평균','사유']);
+  renderPreview('주의',     keepWarn, ['망','서버명','CPU최대','CPU평균','MEM최대','MEM평균','비고']);
+  renderPreview('예외',     except,   ['서버명','CPU최대','CPU평균','MEM최대','MEM평균','사유']);
+
+  document.getElementById('resultSummary').style.display = 'block';
+}
+
+const panjungCellClass = {
+  '강력권고': 'cell-green', '검토': 'cell-yellow', '유지(확정)': 'cell-teal',
+  '유지(주의)': 'cell-red', '일시적피크→검토': 'cell-orange', '예외처리': 'cell-gray', '보통': '',
+};
+
+function renderPreview(tabId, rows, cols) {
+  const el = document.getElementById(`preview-${tabId}`);
+  if (rows.length === 0) { el.innerHTML = '<div class="empty-state">해당 항목 없음</div>'; return; }
+  const sorted = [...rows].sort((a,b) => {
+    const order = {'유지(주의)':0,'유지(확정)':1,'일시적피크→검토':2,'보통':3,'검토':4,'강력권고':5};
+    return (order[a.panjung]??6) - (order[b.panjung]??6) || b.cpu_max - a.cpu_max;
+  });
+  el.innerHTML = `<table class="preview-table">
+    <thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
+    <tbody>${sorted.map(r => {
+      const pj = r.panjung || '';
+      const pc = panjungCellClass[pj] || '';
+      if (tabId === '예외') {
+        return `<tr>
+          <td>${r.oname}</td>
+          <td class="${r.cpu_max>=80?'cell-red':r.cpu_max>=60?'cell-yellow':''}">${r.cpu_max}%</td>
+          <td>${r.cpu_avg}%</td>
+          <td class="${r.mem_max>=80?'cell-red':r.mem_max>=60?'cell-yellow':''}">${r.mem_max}%</td>
+          <td>${r.mem_avg}%</td>
+          <td class="cell-gray">${r.reason||''}</td>
+        </tr>`;
+      }
+      return `<tr>
+        <td>${r.netlabel}</td>
+        <td>${r.oname}</td>
+        <td class="${r.cpu_max>=80?'cell-red':r.cpu_max>=60?'cell-yellow':''}">${r.cpu_max}%</td>
+        <td>${r.cpu_avg}%</td>
+        <td class="${r.mem_max>=80?'cell-red':r.mem_max>=60?'cell-yellow':''}">${r.mem_max}%</td>
+        <td>${r.mem_avg}%</td>
+        <td class="${pc}">${tabId==='유지확정'||tabId==='주의' ? (r.reason||'') : pj}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function switchTab(id) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', b.textContent.includes(id)));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`tab-${id}`).classList.add('active');
+}
+
+// ══════════════════════════════════════
+// 엑셀 보고서 다운로드
+// ══════════════════════════════════════
+async function downloadReport() {
+  if (!analysisResult) return;
+  const btn = document.getElementById('dlBtn');
+  btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> 생성 중...';
+  await sleep(100);
+
+  const { cpuAll, imNet, hmNet, except, keepConf, keepWarn, cand, normal, dateRange } = analysisResult;
+  const targetCpu = analysisResult.targetCpu || 70;
+  const targetMem = analysisResult.targetMem || 80;
+  const hasSpec   = analysisResult.hasSpec || false;
+
+  const wb_out = XLSX.utils.book_new();
+
+  // ── 색상 팔레트
+  const C = {
+    NAVY:'1F3864', NAVY2:'2E4D8C',
+    GREEN:'C8E6C9', GREEN_T:'166534',
+    YELLOW:'FFD54F', YELLOW_T:'854D0E',
+    RED:'FF8A80', RED_T:'991B1B',
+    TEAL:'B2EBF2', TEAL_T:'155E75',
+    ORANGE:'FFE0B2', ORANGE_T:'9A3412',
+    LGRAY:'F5F5F5', WHITE:'FFFFFF',
+    BLACK:'1A1F33', SUBGRAY:'5A6480',
+    IM_BG:'DBEAFE', IM_T:'1E40AF',
+    HM_BG:'DCFCE7', HM_T:'166534',
+    SUM_BG:'EEF2FF', SUM_T:'3730A3',
+    RED_BG:'FFD0D0', YEL_BG:'FFF8D0',
+  };
+
+  // 판정별 배경/텍스트
+  const pjStyle = {
+    '\uac15\ub825\uad8c\uace0': { bg:C.GREEN,  txt:C.GREEN_T  },
+    '\uac80\ud1a0':             { bg:C.YELLOW, txt:C.YELLOW_T },
+    '\uc720\uc9c0(\ud655\uc815)':{ bg:C.TEAL,  txt:C.TEAL_T  },
+    '\uc720\uc9c0(\uc8fc\uc758)':{ bg:C.RED,   txt:C.RED_T   },
+    '\uc77c\uc2dc\uc801\ud53c\ud06c\u2192\uac80\ud1a0':{ bg:C.ORANGE, txt:C.ORANGE_T },
+    '\uc608\uc678\uc218\ub9ac':  { bg:C.LGRAY, txt:C.SUBGRAY },
+    '\ubcf4\ud1b5':             { bg:C.WHITE,  txt:C.BLACK   },
+  };
+
+  const bdrThin = {
+    top:{style:'thin',color:{rgb:'BBBBBB'}},
+    bottom:{style:'thin',color:{rgb:'BBBBBB'}},
+    left:{style:'thin',color:{rgb:'BBBBBB'}},
+    right:{style:'thin',color:{rgb:'BBBBBB'}},
+  };
+
+  // 셀 스타일 빌더
+  function cs(fontOpts, fillRgb, alignH, hasBorder, numFmt) {
+    const obj = {
+      font:{ name:'Arial', sz:fontOpts.sz||10, bold:!!fontOpts.bold,
+             color:{rgb: fontOpts.color||C.BLACK}, italic:!!fontOpts.italic },
+      alignment:{ horizontal:alignH||'center', vertical:'center', wrapText:!!fontOpts.wrap },
+      border: hasBorder!==false ? bdrThin : {},
+    };
+    if (fillRgb) obj.fill = { patternType:'solid', fgColor:{rgb:fillRgb} };
+    if (numFmt)  obj.numFmt = numFmt;
+    return obj;
+  }
+
+  function setC(ws, r, c, val, style) {
+    const addr = XLSX.utils.encode_cell({r,c});
+    ws[addr] = { v:val, t:(typeof val==='number'?'n':'s'), s:style };
+  }
+
+  // ──────────────────────────────────────────
+  // 시트1: 최종 요약 (이미지1 레이아웃 기준)
+  // ──────────────────────────────────────────
+  const ws1 = {};
+  const nLabels = ['\uc778\ub9dd', '\ud589\ub9dd'];   // 인망, 행망
+  const pjKeys  = ['\uac15\ub825\uad8c\uace0','\uac80\ud1a0','\uc77c\uc2dc\uc801\ud53c\ud06c\u2192\uac80\ud1a0','\uc720\uc9c0(\uc8fc\uc758)','\uc720\uc9c0(\ud655\uc815)','\uc608\uc678\uc218\ub9ac'];
+
+  let row = 0;
+
+  // 제목 (R0, 머지 A~H)
+  for (let c=0;c<8;c++) setC(ws1, row, c, c===0?'인스턴스 리소스 사용률 분석 보고서 v3  ('+dateRange+')':'', cs({sz:14,bold:true,color:C.WHITE},C.NAVY,'left',false));
+  row++;
+  // 부제목 (R1)
+  for (let c=0;c<8;c++) setC(ws1, row, c, c===0?`최한시(00~05시) 및 주말 제외 | 전체 ${cpuAll.length}대 | 분석대상 ${cpuAll.filter(r=>r.panjung!=='\uc608\uc678\uc218\ub9ac').length}대 | 목표 사용률: CPU ${targetCpu}% / MEM ${targetMem}%`:'', cs({sz:10,color:'AAAAAA'},C.NAVY,'left',false));
+  row++;
+  // 빈행 (R2)
+  for (let c=0;c<8;c++) setC(ws1, row, c, '', cs({},C.WHITE,'center',false));
+  row++;
+
+  // ── 서비스 운영 현황 블록
+  // 블록 제목 (R3)
+  for (let c=0;c<8;c++) setC(ws1, row, c, c===0?'서비스 운영 현황':'', cs({sz:12,bold:true,color:C.WHITE},C.NAVY,'center',true));
+  row++;
+  // 서비스 헤더 (R4)
+  const svcHdrs = ['구분','이용자 평균','이용자 최대','동시접속 평균','동시접속 최대','처리량 평균','처리량 최대'];
+  svcHdrs.forEach((h,c) => setC(ws1, row, c, h, cs({sz:10,bold:true,color:C.WHITE},C.NAVY2,'center',true)));
+  row++;
+  // 서비스 데이터 (R5~6)
+  const svcRows = [
+    ['인터넷망',
+      getSvcVal('svcIMAvgUser'),
+      getSvcVal('svcIMMaxUser'),
+      getSvcVal('svcIMConAvg'),
+      getSvcVal('svcIMConMax'),
+      getSvcVal('svcIMAvgTps'),
+      getSvcVal('svcIMMaxTps')],
+    ['행정망',
+      getSvcVal('svcHMAvgUser'),
+      getSvcVal('svcHMMaxUser'),
+      getSvcVal('svcHMConAvg'),
+      getSvcVal('svcHMConMax'),
+      getSvcVal('svcHMAvgTps'),
+      getSvcVal('svcHMMaxTps')],
+  ];
+  svcRows.forEach((vals, ri) => {
+    const bg = ri===0 ? C.IM_BG : C.HM_BG;
+    const tc = ri===0 ? C.IM_T : C.HM_T;
+    vals.forEach((v,c) => setC(ws1, row, c, v, cs({sz:10,bold:c===0,color:c===0?tc:C.BLACK}, bg, c===0?'center':'center', true)));
+    row++;
+  });
+
+  // 빈행
+  for (let c=0;c<8;c++) setC(ws1, row, c, '', cs({},C.WHITE,'center',false));
+  row++;
+
+  // ── 최종 판정 현황 블록
+  for (let c=0;c<8;c++) setC(ws1, row, c, c===0?'최종 판정 현황 (서버 역할 반영)':'', cs({sz:12,bold:true,color:C.WHITE},C.NAVY,'center',true));
+  row++;
+  // 판정 헤더
+  const pjHdrs = ['구분','🟢 강력권고','🟡 검토','🟠 일시피크→검토','🔴 유지(주의)','🔵 유지(확정)','전체'];
+  pjHdrs.forEach((h,c) => setC(ws1, row, c, h, cs({sz:10,bold:true,color:C.WHITE,wrap:true},C.NAVY2,'center',true)));
+  row++;
+  // 판정 데이터 (인망/행망)
+  nLabels.forEach((nl, ri) => {
+    const bg = ri===0 ? C.IM_BG : C.HM_BG;
+    const tc = ri===0 ? C.IM_T : C.HM_T;
+    setC(ws1, row, 0, nl, cs({sz:11,bold:true,color:tc},bg,'center',true));
+    const pjKeysForRow = ['\uac15\ub825\uad8c\uace0','\uac80\ud1a0','\uc77c\uc2dc\uc801\ud53c\ud06c\u2192\uac80\ud1a0','\uc720\uc9c0(\uc8fc\uc758)','\uc720\uc9c0(\ud655\uc815)'];
+    pjKeysForRow.forEach((pj, ci) => {
+      const cnt = cpuAll.filter(r=>r.netlabel===nl&&r.panjung===pj).length;
+      const pjB = pjStyle[pj]?.bg||C.WHITE;
+      const pjT = pjStyle[pj]?.txt||C.BLACK;
+      setC(ws1, row, ci+1, cnt, cs({sz:12,bold:cnt>0,color:pjT},pjB,'center',true));
+    });
+    const total = cpuAll.filter(r=>r.netlabel===nl&&r.panjung!=='\uc608\uc678\uc218\ub9ac').length;
+    setC(ws1, row, 6, total, cs({sz:12,bold:true,color:C.BLACK},C.LGRAY,'center',true));
+    row++;
+  });
+
+  // 빈행
+  for (let c=0;c<8;c++) setC(ws1, row, c, '', cs({},C.WHITE,'center',false));
+  row++;
+
+  // ── KPI 블록 (인망/행망 나란히) - 이미지1 스타일
+  // 인망 KPI 블록 (col 0~2), 행망 KPI 블록 (col 4~6)
+  const imData = cpuAll.filter(r=>r.netlabel==='\uc778\ub9dd'&&r.panjung!=='\uc608\uc678\uc218\ub9ac');
+  const hmData = cpuAll.filter(r=>r.netlabel==='\ud589\ub9dd'&&r.panjung!=='\uc608\uc678\uc218\ub9ac');
+
+  function avg(arr, key) { return arr.length ? (arr.reduce((s,r)=>s+r[key],0)/arr.length).toFixed(1) : '0.0'; }
+
+  const kpiStart = row;
+  // 인망 헤더
+  setC(ws1, row, 0, '\uc778\ub9dd (\ubd84\uc11d '+imData.length+'\ub300)', cs({sz:11,bold:true,color:C.WHITE},C.IM_T,'center',true));
+  for(let c=1;c<3;c++) setC(ws1, row, c, '', cs({sz:11,bold:true,color:C.WHITE},C.IM_T,'center',true));
+  // 행망 헤더
+  setC(ws1, row, 4, '\ud589\ub9dd (\ubd84\uc11d '+hmData.length+'\ub300)', cs({sz:11,bold:true,color:C.WHITE},C.HM_T,'center',true));
+  for(let c=5;c<7;c++) setC(ws1, row, c, '', cs({sz:11,bold:true,color:C.WHITE},C.HM_T,'center',true));
+  row++;
+
+  const kpiItems = [
+    [avg(imData,'cpu_max')+'%', 'CPU \ucd5c\ub300 \ud3c9\uade0', avg(hmData,'cpu_max')+'%'],
+    [avg(imData,'cpu_avg')+'%', 'CPU \ud3c9\uade0', avg(hmData,'cpu_avg')+'%'],
+    [avg(imData,'mem_max')+'%', 'MEM \ucd5c\ub300 \ud3c9\uade0', avg(hmData,'mem_max')+'%'],
+    [avg(imData,'mem_avg')+'%', 'MEM \ud3c9\uade0', avg(hmData,'mem_avg')+'%'],
+  ];
+  kpiItems.forEach(([imV, lbl, hmV]) => {
+    setC(ws1, row, 0, imV,  cs({sz:14,bold:true,color:C.IM_T},C.IM_BG,'center',true));
+    setC(ws1, row, 1, lbl,  cs({sz:10,color:C.BLACK},C.LGRAY,'left',true));
+    setC(ws1, row, 2, '',   cs({},C.LGRAY,'center',true));
+    setC(ws1, row, 3, '',   cs({},C.WHITE,'center',false));
+    setC(ws1, row, 4, hmV,  cs({sz:14,bold:true,color:C.HM_T},C.HM_BG,'center',true));
+    setC(ws1, row, 5, lbl,  cs({sz:10,color:C.BLACK},C.LGRAY,'left',true));
+    setC(ws1, row, 6, '',   cs({},C.LGRAY,'center',true));
+    row++;
+  });
+
+  // 빈행
+  for (let c=0;c<8;c++) setC(ws1, row, c, '', cs({},C.WHITE,'center',false));
+  row++;
+
+  // ── 판정 기준 설명 블록
+  for (let c=0;c<8;c++) setC(ws1, row, c, c===0?'판정 기준 설명':'', cs({sz:12,bold:true,color:C.WHITE},C.NAVY,'center',true));
+  row++;
+  const cHdrs2 = ['판정','설명'];
+  setC(ws1, row, 0, '판정', cs({sz:10,bold:true,color:C.WHITE},C.NAVY2,'center',true));
+  setC(ws1, row, 1, '설명', cs({sz:10,bold:true,color:C.WHITE},C.NAVY2,'center',true));
+  for(let c=2;c<8;c++) setC(ws1, row, c, '', cs({sz:10,bold:true,color:C.WHITE},C.NAVY2,'center',true));
+  row++;
+
+  const criteriaRows = [
+    ['강력권고', C.GREEN,  C.GREEN_T,  'VM: CPU AND MEM 최대 < 40% (감설 대상) | noti/sorry 서버(분기별 점검 전용)'],
+    ['일시피크→검토', C.ORANGE, C.ORANGE_T, '규칙에서 review로 지정된 서버 — 배포/재시작 시 순간 피크, 평상시 부하 낮음'],
+    ['유지(주의)', C.RED,  C.RED_T,    'VM: CPU 또는 MEM 최대 ≥ 70% (증설 검토 대상)'],
+    ['\uc720\uc9c0(\ud655\uc815)', C.TEAL, C.TEAL_T,   '\uc11c\ubc84 \uc5ed\ud560 \ud655\uc778 \uacb0\uacfc \uc720\uc9c0 \uacb0\uc815: ionengs(\uc811\uadfc\uc81c\uc5b4), static(CDN\ub300\uccb4), tracer(\uc0ac\uc6a9\uc790\uc81c\uc5b4), pdf/edms(\uc8fc\uc694\uc11c\ubc84)'],
+    ['\ubcf4\ud1b5',              C.LGRAY, C.SUBGRAY,  '\uc704 \uc870\uac74 \uc678'],
+  ];
+  criteriaRows.forEach(([lbl, bg, tc, desc], ri) => {
+    const rowBg = ri%2===0 ? C.LGRAY : C.WHITE;
+    setC(ws1, row, 0, lbl,  cs({sz:10,bold:true,color:tc},bg,'center',true));
+    setC(ws1, row, 1, desc, cs({sz:10,color:C.BLACK},rowBg,'left',true));
+    for(let c=2;c<8;c++) setC(ws1, row, c, '', cs({sz:10},rowBg,'center',true));
+    row++;
+  });
+
+  const maxRow1 = row - 1;
+  ws1['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:maxRow1,c:7}});
+  ws1['!cols'] = [{wch:22},{wch:18},{wch:18},{wch:6},{wch:22},{wch:18},{wch:18},{wch:4}];
+  ws1['!rows'] = [{hpt:30},{hpt:16}];
+  // 머지: 제목, 부제, 서비스현황 제목, 판정현황 제목, 인망KPI 헤더, 행망KPI 헤더
+  ws1['!merges'] = [
+    {s:{r:0,c:0},e:{r:0,c:7}},
+    {s:{r:1,c:0},e:{r:1,c:7}},
+    {s:{r:3,c:0},e:{r:3,c:7}},   // 서비스운영현황 제목
+    {s:{r:9,c:0},e:{r:9,c:7}},   // 최종판정현황 제목
+    {s:{r:kpiStart,c:0},e:{r:kpiStart,c:2}},   // 인망 KPI 헤더
+    {s:{r:kpiStart,c:4},e:{r:kpiStart,c:6}},   // 행망 KPI 헤더
+  ];
+  // 판정기준 설명 컬럼 머지
+  const criteriaBase = maxRow1 - criteriaRows.length;
+  for (let i=0; i<criteriaRows.length; i++) {
+    ws1['!merges'].push({s:{r:criteriaBase+i,c:1},e:{r:criteriaBase+i,c:7}});
+  }
+  ws1['!merges'].push({s:{r:criteriaBase-2,c:0},e:{r:criteriaBase-2,c:7}}); // 판정기준 제목
+  ws1['!merges'].push({s:{r:criteriaBase-1,c:1},e:{r:criteriaBase-1,c:7}}); // 판정기준 헤더 설명 칸
+  XLSX.utils.book_append_sheet(wb_out, ws1, '\ucd5c\uc885 \uc694\uc57d');
+
+  // ──────────────────────────────────────────
+  // 공통: 상세 시트 생성 함수
+  // ──────────────────────────────────────────
+  function makeDetailSheet(sheetTitle, headers, rows, getRow, opts) {
+    const { pjCol=-1, scaleCol=-1, 망Col=-1, maxCols=[], firstW=48,
+            extraWidths={}, extraW={} } = opts||{};
+    const colW = Object.assign({}, extraW, extraWidths);  // 둘 다 지원
+    const ws = {};
+    const nCols = headers.length;
+
+    for(let c=0;c<nCols;c++) setC(ws,0,c,c===0?sheetTitle:'',cs({sz:13,bold:true,color:C.WHITE},C.NAVY,c===0?'left':'center',false));
+    for(let c=0;c<nCols;c++) setC(ws,1,c,c===0?(`조회기간: ${dateRange} | 최한시·주말 제외 | 스케일 목표: CPU ${targetCpu}% / MEM ${targetMem}%`):'',cs({sz:9,color:'AAAAAA'},C.NAVY,'left',false));
+    for(let c=0;c<nCols;c++) setC(ws,2,c,'',cs({},C.WHITE,'center',false));
+    headers.forEach((h,c)=>setC(ws,3,c,h,cs({sz:10,bold:true,color:C.WHITE,wrap:true},C.NAVY2,'center',true)));
+
+    const SCALE_FILL2 = {
+      '\uc2a4\ucf00\uc77c \ub2e4\uc6b4': { bg:C.DN_BG||'E3F2FD', tc:C.DN_T||'1565C0' },
+      '\uc2a4\ucf00\uc77c \uc5c5':   { bg:C.UP_BG||'FCE4EC', tc:C.UP_T||'B71C1C' },
+    };
+    // C에 없으면 fallback
+    if (!C.DN_BG) { C.DN_BG='E3F2FD'; C.DN_T='1565C0'; C.UP_BG='FCE4EC'; C.UP_T='B71C1C'; }
+
+    let maxR = 3;
+    rows.forEach((rowData, ri) => {
+      const R = ri+4;
+      const vals = getRow(rowData);
+      const isEven = ri%2===0;
+      const defBg = isEven?C.LGRAY:C.WHITE;
+      vals.forEach((val, c) => {
+        const hdr = headers[c]||'';
+        const isNum = typeof val==='number';
+        let bg=defBg, tc=C.BLACK, bold=false, ha='center', nfmt=null;
+
+        if(c===0&&망Col<0||c===1&&망Col===0){ ha='left'; }
+        if(c===0&&망Col<0){ bold=true; }
+
+        if(c===망Col){
+          bg = val==='\uc778\ub9dd'?C.IM_BG:C.HM_BG;
+          tc = val==='\uc778\ub9dd'?C.IM_T:C.HM_T;
+          bold=true;
+        }
+
+        if(isNum){
+          nfmt='0.0';
+          if(maxCols.includes(c)){
+            if(val>=80){bg=C.RED_BG;tc=C.RED_T;bold=true;}
+            else if(val>=60){bg=C.YEL_BG;tc=C.YELLOW_T;}
+          }
+          if(hdr.includes('NIC%')){
+            if(val>=20){bg=C.RED_BG;tc=C.RED_T;bold=true;}
+            else if(val>=10){bg=C.YEL_BG;tc=C.YELLOW_T;}
+          }
+          // 권고/예상 컬럼 정수 포맷
+          if(hdr.includes('\uad8c\uace0')||hdr.includes('vCPU')||hdr.includes('RAM')){
+            nfmt = Number.isInteger(val) ? '0' : '0.0';
+          }
+        }
+
+        if(c===pjCol&&pjStyle[val]){
+          bg=pjStyle[val].bg; tc=pjStyle[val].txt; bold=true;
+        }
+
+        // 스케일 방향 컬럼
+        if(c===scaleCol){
+          const sf = SCALE_FILL2[val];
+          if(sf){ bg=sf.bg; tc=sf.tc; bold=true; }
+          else if(val==='\uc720\uc9c0'){ bg=C.LGRAY; tc=C.SUBGRAY; }
+        }
+
+        if(hdr.includes('\uc0ac\uc720')||hdr.includes('\ube44\uace0')){ ha='left'; }
+        if(hdr.includes('\ub0a0\uc9dc')||hdr.includes('\uc2dc\uc2a4\ud15c')){ ha='left'; }
+
+        setC(ws,R,c,val,cs({sz: c===1&&망Col===0?9:10, bold,color:tc},bg,ha,true,nfmt));
+      });
+      maxR=R;
+    });
+
+    if(rows.length===0){
+      setC(ws,4,0,'\ub370\uc774\ud130 \uc5c6\uc74c',cs({sz:10,italic:true,color:C.SUBGRAY},C.LGRAY,'center',true));
+      maxR=4;
+    }
+
+    ws['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:maxR,c:nCols-1}});
+    ws['!cols'] = headers.map((h,i)=>{
+      if(망Col>=0&&i===0) return {wch:7};
+      if((망Col>=0&&i===1)||(망Col<0&&i===0)) return {wch:firstW};
+      if(colW[i]!==undefined) return {wch:colW[i]};
+      if(h.includes('\uc0ac\uc720')||h.includes('\ube44\uace0')) return {wch:36};
+      if(h.includes('\ub0a0\uc9dc')) return {wch:28};
+      if(h.includes('\uc2dc\uc2a4\ud15c')) return {wch:22};
+      if(h.includes('NIC')) return {wch:10};
+      if(h.includes('vCPU')||h.includes('RAM')) return {wch:9};
+      return {wch:13};
+    });
+    ws['!rows'] = [{hpt:26},{hpt:14},{hpt:6},{hpt:34}];
+    for(let i=4;i<=maxR;i++) ws['!rows'][i]={hpt:18};
+    ws['!merges'] = [
+      {s:{r:0,c:0},e:{r:0,c:nCols-1}},
+      {s:{r:1,c:0},e:{r:1,c:nCols-1}},
+    ];
+    return ws;
+  }
+
+  const pjOrder = {'\uc720\uc9c0(\uc8fc\uc758)':0,'\uc720\uc9c0(\ud655\uc815)':1,'\uc77c\uc2dc\uc801\ud53c\ud06c\u2192\uac80\ud1a0':2,'\ubcf4\ud1b5':3,'\uac80\ud1a0':4,'\uac15\ub825\uad8c\uace0':5,'\uc608\uc678\uc218\ub9ac':6};
+
+  // ── 컬럼 정의 (사양 파일 여부에 따라 자동 전환)
+  const cpuHdrs = hasSpec
+    ? ['\uc11c\ubc84\uba85','\uc2dc\uc2a4\ud15c\uba85','\ud604\uc7ac\nvCPU','\ud604\uc7ac\nRAM(GB)',
+       'CPU\n\ucd5c\ub300(%)','CPU\n\ud3c9\uade0(%)','MEM\n\ucd5c\ub300(%)','MEM\n\ud3c9\uade0(%)',
+       'CPU\u226580%\n\ubc1c\uc0dd\ub0a0\uc9dc','MEM\u226580%\n\ubc1c\uc0dd\ub0a0\uc9dc',
+       '\ud310\uc815','\uc2a4\ucf00\uc77c\n\ubc29\ud5a5','\uad8c\uace0\nvCPU','\uad8c\uace0\nRAM(GB)',
+       '\uc608\uc0c1\nCPU%','\uc608\uc0c1\nMEM%','\ud310\uc815 \uc0ac\uc720']
+    : ['\uc11c\ubc84\uba85','CPU \ucd5c\ub300(%)','CPU \ud3c9\uade0(%)','MEM \ucd5c\ub300(%)','MEM \ud3c9\uade0(%)','판정','판정 사유'];
+
+  const cpuGetRow = hasSpec
+    ? r => [r.oname, r.\uc2dc\uc2a4\ud15c\uba85||'', r.\ud604\uc7ac_cpu||'', r.\ud604\uc7ac_ram||'',
+            r.cpu_max, r.cpu_avg, r.mem_max, r.mem_avg,
+            r.cpu_alert||'-', r.mem_alert||'-',
+            r.panjung, r.\uc2a4\ucf00\uc77c\ubc29\ud5a5||'-',
+            r.\uad8c\uace0_cpu||'', r.\uad8c\uace0_ram||'',
+            r.\uc608\uc0c1_cpu||'', r.\uc608\uc0c1_mem||'', r.reason||'']
+    : r => [r.oname, r.cpu_max, r.cpu_avg, r.mem_max, r.mem_avg, r.panjung, r.reason||''];
+
+  const cpuOpts = hasSpec
+    ? {pjCol:10, scaleCol:11, maxCols:[4,6], firstW:44,
+       extraWidths:{1:22, 8:28, 9:28, 16:36}}
+    : {pjCol:5, maxCols:[1,3], firstW:48};
+
+  const imTarget = cpuAll.filter(r=>r.netlabel==='\uc778\ub9dd')
+    .sort((a,b)=>(pjOrder[a.panjung]??7)-(pjOrder[b.panjung]??7)||b.cpu_max-a.cpu_max);
+  const ws2 = makeDetailSheet('\uc778\ub9dd CPU/MEM \uc0c1\uc138', cpuHdrs, imTarget, cpuGetRow, cpuOpts);
+  XLSX.utils.book_append_sheet(wb_out, ws2, '\uc778\ub9dd CPU-MEM');
+
+  const hmTarget = cpuAll.filter(r=>r.netlabel==='\ud589\ub9dd')
+    .sort((a,b)=>(pjOrder[a.panjung]??7)-(pjOrder[b.panjung]??7)||b.cpu_max-a.cpu_max);
+  const ws3 = makeDetailSheet('\ud589\ub9dd CPU/MEM \uc0c1\uc138', cpuHdrs, hmTarget, cpuGetRow, cpuOpts);
+  XLSX.utils.book_append_sheet(wb_out, ws3, '\ud589\ub9dd CPU-MEM');
+
+  // ── Network 시트 (사양 여부 무관)
+  const netHdrs = ['\uc11c\ubc84\uba85','In \ucd5c\ub300(Mbps)','In \ud3c9\uade0(Mbps)','Out \ucd5c\ub300(Mbps)','Out \ud3c9\uade0(Mbps)','In NIC%','Out NIC%'];
+  const wsN1 = makeDetailSheet('\uc778\ub9dd Network \uc0c1\uc138', netHdrs,
+    [...imNet].sort((a,b)=>b.in_max-a.in_max),
+    r=>[r.oname,r.in_max,r.in_avg,r.out_max,r.out_avg,r.in_util_pct,r.out_util_pct],
+    {maxCols:[1,3], firstW:48});
+  XLSX.utils.book_append_sheet(wb_out, wsN1, '\uc778\ub9dd Network');
+
+  const wsN2 = makeDetailSheet('\ud589\ub9dd Network \uc0c1\uc138', netHdrs,
+    [...hmNet].sort((a,b)=>b.in_max-a.in_max),
+    r=>[r.oname,r.in_max,r.in_avg,r.out_max,r.out_avg,r.in_util_pct,r.out_util_pct],
+    {maxCols:[1,3], firstW:48});
+  XLSX.utils.book_append_sheet(wb_out, wsN2, '\ud589\ub9dd Network');
+
+  // ── 스펙다운 후보
+  const candHdrs = hasSpec
+    ? ['\ub9dd','\uc11c\ubc84\uba85','\uc2dc\uc2a4\ud15c\uba85','\ud604\uc7ac\nvCPU','\ud604\uc7ac\nRAM',
+       'CPU\n\ucd5c\ub300(%)','CPU\n\ud3c9\uade0(%)','MEM\n\ucd5c\ub300(%)','MEM\n\ud3c9\uade0(%)',
+       'CPU\u226580%\n\ubc1c\uc0dd\ub0a0\uc9dc','MEM\u226580%\n\ubc1c\uc0dd\ub0a0\uc9dc',
+       '\ud310\uc815','\uc2a4\ucf00\uc77c\ubc29\ud5a5','\uad8c\uace0\nvCPU','\uad8c\uace0\nRAM',
+       '\uc608\uc0c1\nCPU%','\uc608\uc0c1\nMEM%','\ube44\uace0']
+    : ['\ub9dd','\uc11c\ubc84\uba85','CPU \ucd5c\ub300(%)','CPU \ud3c9\uade0(%)','MEM \ucd5c\ub300(%)','MEM \ud3c9\uade0(%)','판정','비고'];
+
+  const candGetRow = hasSpec
+    ? r=>[r.netlabel, r.oname, r.\uc2dc\uc2a4\ud15c\uba85||'', r.\ud604\uc7ac_cpu||'', r.\ud604\uc7ac_ram||'',
+          r.cpu_max, r.cpu_avg, r.mem_max, r.mem_avg,
+          r.cpu_alert||'-', r.mem_alert||'-',
+          r.panjung, r.\uc2a4\ucf00\uc77c\ubc29\ud5a5||'-',
+          r.\uad8c\uace0_cpu||'', r.\uad8c\uace0_ram||'',
+          r.\uc608\uc0c1_cpu||'', r.\uc608\uc0c1_mem||'', r.reason||'']
+    : r=>[r.netlabel,r.oname,r.cpu_max,r.cpu_avg,r.mem_max,r.mem_avg,r.panjung,r.reason||''];
+
+  const candOpts = hasSpec
+    ? {pjCol:11, scaleCol:12, 망Col:0, maxCols:[5,7], firstW:44,
+       extraWidths:{0:7, 2:22, 9:28, 10:28, 17:36}}
+    : {pjCol:6, 망Col:0, maxCols:[2,4], firstW:48};
+
+  const candSorted = [...cand].sort((a,b)=>{
+    const o={'\uac15\ub825\uad8c\uace0':0,'\uac80\ud1a0':1,'\uc77c\uc2dc\uc801\ud53c\ud06c\u2192\uac80\ud1a0':2};
+    return (o[a.panjung]??3)-(o[b.panjung]??3)||a.cpu_avg-b.cpu_avg;
+  });
+  const ws6 = makeDetailSheet('\uc2a4\ud399 \ub2e4\uc6b4 \ud6c4\ubcf4', candHdrs, candSorted, candGetRow, candOpts);
+  XLSX.utils.book_append_sheet(wb_out, ws6, '\uc2a4\ud399\ub2e4\uc6b4 \ud6c4\ubcf4');
+
+  // ── 유지 확정
+  const keepHdrs = ['\ub9dd','\uc11c\ubc84\uba85','CPU \ucd5c\ub300(%)','CPU \ud3c9\uade0(%)','MEM \ucd5c\ub300(%)','MEM \ud3c9\uade0(%)','유지 사유'];
+  const ws7 = makeDetailSheet('\uc720\uc9c0 \ud655\uc815 \ubaa9\ub85d', keepHdrs,
+    [...keepConf].sort((a,b)=>a.netlabel.localeCompare(b.netlabel)||a.oname.localeCompare(b.oname)),
+    r=>[r.netlabel,r.oname,r.cpu_max,r.cpu_avg,r.mem_max,r.mem_avg,r.reason||''],
+    {망Col:0, maxCols:[2,4], firstW:48});
+  XLSX.utils.book_append_sheet(wb_out, ws7, '\uc720\uc9c0 \ud655\uc815');
+
+  // ── 예외처리
+  const excHdrs = ['\uc11c\ubc84\uba85','CPU \ucd5c\ub300(%)','CPU \ud3c9\uade0(%)','MEM \ucd5c\ub300(%)','MEM \ud3c9\uade0(%)','예외처리 사유'];
+  const ws8 = makeDetailSheet('\uc608\uc678\uc218\ub9ac \ubaa9\ub85d', excHdrs,
+    [...except].sort((a,b)=>a.oname.localeCompare(b.oname)),
+    r=>[r.oname,r.cpu_max,r.cpu_avg,r.mem_max,r.mem_avg,r.reason||''],
+    {maxCols:[1,3], firstW:48});
+  XLSX.utils.book_append_sheet(wb_out, ws8, '\uc608\uc678\uc218\ub9ac');
+
+  // ── 다운로드
+  const today = new Date();
+  const fname = `\ub9ac\uc18c\uc2a4_\ubd84\uc11d\ubcf4\uace0\uc11c_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.xlsx`;
+  XLSX.writeFile(wb_out, fname);
+
+  btn.disabled = false;
+  btn.innerHTML = '<span>\u2b07\ufe0f</span> 보고서 다운로드';
+}
+</script>
+</body>
+</html>
